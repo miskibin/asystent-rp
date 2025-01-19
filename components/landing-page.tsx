@@ -52,7 +52,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-center gap-2">
           <CalendarClock className="w-5 h-5 text-destructive" />
           <p className="text-sm md:text-base font-medium text-primary">
-            Asystent właśnie stał się dużo mądrzejszy!
+              Poszukujemy osób do zespołu! (Napisz na discordzie)
           </p>
         </div>
       </div>

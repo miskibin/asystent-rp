@@ -1,5 +1,6 @@
 # [Asystent RP](https://chat.sejm-stats.pl/)
 
+
 ![image](https://github.com/user-attachments/assets/0bc87d98-16e5-4bd5-87cb-4e4aeb2197c0)
 
 

@@ -82,7 +82,7 @@ const LoginCard: React.FC<LoginCardProps> = ({ onOAuthSignIn }) => (
             className="flex items-center justify-center text-sm text-muted-foreground"
           >
             <FaShieldAlt className="h-4 w-4 mr-2 text-green-500" />
-            Dane nie są w żaden sposób przetwarzane.
+            Twoje dane są bezpieczne.
           </motion.div>
         </div>
       </CardContent>

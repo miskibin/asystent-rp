@@ -67,7 +67,11 @@ export const useChatLogic = () => {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret":
+            process.env.NEXT_PUBLIC_API_SECRET || "default-secret-key",
+        },
         body: JSON.stringify({
           messages: messageHistory,
           systemPrompt,
@@ -187,7 +191,11 @@ export const useChatLogic = () => {
 
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-secret":
+            process.env.NEXT_PUBLIC_API_SECRET || "default-secret-key",
+        },
         body: JSON.stringify({
           messages: [...messages, userMessage],
           systemPrompt,

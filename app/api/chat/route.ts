@@ -10,11 +10,13 @@ import { createWikipediaTool } from "@/tools/wikipedia";
 import { OpenAILLM } from "@/lib/llms/OpenAILLm";
 import { AbstractLLM } from "@/lib/llms/LLM";
 export const runtime = "edge";
-export const dynamic = 'force-dynamic'; 
+export const dynamic = "force-dynamic";
 const PLUGIN_MAPPING: Record<PluginNames, (model: TogetherLLM) => any> = {
   [PluginNames.SejmStats]: createSejmStatsTool,
   [PluginNames.Wikipedia]: createWikipediaTool,
 };
+
+const API_SECRET = process.env.API_SECRET || "default-secret-key";
 
 function createLLM(modelName: string, options: any) {
   if (modelName.startsWith("gpt")) {
@@ -33,6 +35,15 @@ function createLLM(modelName: string, options: any) {
 }
 export async function POST(req: NextRequest) {
   try {
+    // Validate API secret
+    const apiToken = req.headers.get("x-api-secret");
+    if (!apiToken || apiToken !== API_SECRET) {
+      return NextResponse.json(
+        { error: "Unauthorized access" },
+        { status: 403 }
+      );
+    }
+
     // Validate referer
     const referer = req.headers.get("referer");
     const expectedReferer = `${req.nextUrl.protocol}//${req.nextUrl.host}`;

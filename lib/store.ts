@@ -71,9 +71,9 @@ export const useChatStore = create<ChatState>()(
           description: "powolny",
         },
         {
-          short: "Llama-3.2-11B",
-          name: "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-          description: "powolny",
+          short: "Llama-3.3-70B",
+          name: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+          description: "eksperymentalny",
         },
       ],
       selectedModel: "gpt-4o-mini",

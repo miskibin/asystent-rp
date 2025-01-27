@@ -35,6 +35,7 @@ import {
   createClientComponentClient,
   User,
 } from "@supabase/auth-helpers-nextjs";
+import { isUserPatron } from "@/lib/get-patronite-users";
 
 const Sidebar = () => {
   const { plugins, togglePlugin } = useChatStore();
@@ -73,7 +74,7 @@ const Sidebar = () => {
 export function AppSidebar() {
   const { setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { clearMessages, patrons } = useChatStore();
+  const { clearMessages } = useChatStore();
   const [user, setUser] = useState<User | null>(null);
   const isDev = process.env.NODE_ENV === "development";
   const [isPatron, setIsPatron] = useState(false);
@@ -99,12 +100,24 @@ export function AppSidebar() {
 
   useEffect(() => {
     setMounted(true);
-    setIsPatron(
-      user?.email
-        ? patrons.includes(user.email) || process.env.NODE_ENV === "development"
-        : false
-    );
-  }, [user, patrons]);
+  }, []);
+
+  useEffect(() => {
+    const checkPatronStatus = async () => {
+      if (!user?.email) {
+        setIsPatron(false);
+        return;
+      }
+
+      const patronStatus = await isUserPatron(user.email);
+      setIsPatron(patronStatus || isDev);
+    };
+
+    if (mounted) {
+      checkPatronStatus();
+    }
+  }, [user, mounted, isDev]);
+
   if (!user && process.env.NODE_ENV !== "development") return null;
   return (
     <SidebarComponent className="border-r">
@@ -214,7 +227,7 @@ export function AppSidebar() {
                   </CardContent>
                 </Card>
               )}
-              <ChatSettings isPatron={isPatron ||isDev } />
+              <ChatSettings isPatron={isPatron || isDev} />
             </div>
           </SidebarGroup>
         </ScrollArea>

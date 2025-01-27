@@ -21,8 +21,8 @@ async function fetchPatronEmails(): Promise<Set<string>> {
 
   try {
     const response = await fetch(url, { headers });
-    const data = await response.json();
-    const emails = new Set(data.results.map((patron: any) => patron.email));
+    const data: { results: Array<{ email: string }> } = await response.json();
+    const emails = new Set(data.results.map((patron) => patron.email));
 
     // Add additional allowed emails
     emails.add("michalskibinski109@gmail.com");
@@ -36,7 +36,7 @@ async function fetchPatronEmails(): Promise<Set<string>> {
 }
 
 // Public function that only validates email
-export async function isPatron(email: string): Promise<boolean> {
+export async function isUserPatron(email: string): Promise<boolean> {
   if (!cache || Date.now() - cache.timestamp >= CACHE_DURATION) {
     cache = {
       data: await fetchPatronEmails(),

@@ -1,5 +1,5 @@
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { getPatrons } from "./get-patronite-users";
+import { isUserPatron } from "./get-patronite-users";
 
 type LimitType = "chat_submission" | "paid_model_usage";
 
@@ -15,15 +15,6 @@ export const useMessageLimits = (selectedModel: string) => {
   const LIMIT_TYPES: { [key: string]: LimitType } = {
     TOTAL: "chat_submission",
     PAID_MODEL: "paid_model_usage",
-  };
-
-  const checkIsPatron = async (userEmail: string): Promise<boolean> => {
-    try {
-      const patronEmails = await getPatrons();
-      return patronEmails.includes(userEmail);
-    } catch {
-      return false;
-    }
   };
 
   const checkMessageLimits = async (
@@ -44,8 +35,8 @@ export const useMessageLimits = (selectedModel: string) => {
       };
     }
 
-    const isPatron = await checkIsPatron(user.email);
-    const totalLimit = isPatron
+    const patronStatus = await isUserPatron(user.email);
+    const totalLimit = patronStatus
       ? LIMITS.PATRON_TOTAL_LIMIT
       : LIMITS.FREE_TOTAL_LIMIT;
 
@@ -62,14 +53,14 @@ export const useMessageLimits = (selectedModel: string) => {
       return {
         canSendMessage: false,
         shouldSwitchModel: false,
-        message: isPatron
+        message: patronStatus
           ? `Osiągnięto dzienny limit ${totalLimit} wiadomości. Spróbuj ponownie jutro.`
           : `Osiągnięto dzienny limit ${totalLimit} wiadomości. Zostań patronem, aby uzyskać więcej możliwości.`,
       };
     }
 
     // For non-patrons using paid models
-    if (!isPatron && isGptModel) {
+    if (!patronStatus && isGptModel) {
       const { data: paidModelCount } = await supabase.rpc(
         "get_daily_limit_count",
         {
@@ -114,7 +105,7 @@ export const useMessageLimits = (selectedModel: string) => {
     } = await supabase.auth.getUser();
     if (!user?.email) return null;
 
-    const isPatron = await checkIsPatron(user.email);
+    const patronStatus = await isUserPatron(user.email);
     const [{ data: totalCount }, { data: paidModelCount }] = await Promise.all([
       supabase.rpc("get_daily_limit_count", {
         p_user_id: user.id,
@@ -128,12 +119,12 @@ export const useMessageLimits = (selectedModel: string) => {
 
     return {
       totalUsed: totalCount || 0,
-      gptUsed: !isPatron ? paidModelCount || 0 : 0,
-      totalLimit: isPatron
+      gptUsed: !patronStatus ? paidModelCount || 0 : 0,
+      totalLimit: patronStatus
         ? LIMITS.PATRON_TOTAL_LIMIT
         : LIMITS.FREE_TOTAL_LIMIT,
       gptLimit: LIMITS.FREE_GPT_LIMIT,
-      isPatron,
+      isPatron: patronStatus,
     };
   };
 

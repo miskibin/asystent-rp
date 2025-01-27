@@ -70,6 +70,11 @@ export const useChatStore = create<ChatState>()(
           name: "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
           description: "powolny",
         },
+        {
+          short: "Llama-3.2-11B",
+          name: "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+          description: "powolny",
+        },
       ],
       selectedModel: "gpt-4o-mini",
 

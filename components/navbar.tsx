@@ -10,7 +10,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { getPatrons } from "@/lib/get-patronite-users";
 import { useChatStore } from "@/lib/store";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -18,6 +17,7 @@ import {
   User,
 } from "@supabase/auth-helpers-nextjs";
 import { useRouter } from "next/navigation";
+import { isUserPatron } from "@/lib/get-patronite-users";
 
 const Navbar: React.FC = () => {
   const router = useRouter();
@@ -48,10 +48,8 @@ const Navbar: React.FC = () => {
   useEffect(() => {
     const fetchAndSetPatrons = async () => {
       try {
-        const patronList = await getPatrons();
-        setPatrons(patronList);
         if (user?.email) {
-          setIsPatron(patronList.includes(user.email));
+          setIsPatron(await isUserPatron(user.email));
         }
       } catch (error) {
         console.error("Failed to fetch patrons:", error);

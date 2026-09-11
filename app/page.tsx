@@ -1,111 +1,55 @@
 "use client";
-import React, { useState, useEffect } from "react";
+
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+
 import { ChatCard } from "@/components/chatCard";
 import { ChatProvider } from "./ChatContext";
-import {
-  createClientComponentClient,
-  User,
-} from "@supabase/auth-helpers-nextjs";
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/sidebar";
+import { createClientComponentClient } from "@/lib/supabase/client";
 import Navbar from "@/components/navbar";
-import { Mail, Loader2, Lock } from "lucide-react";
-import LoginPage, { AuthProvider } from "@/components/landing-page";
+import LoginPage, { type AuthProvider } from "@/components/landing-page";
 
 export default function Home() {
-  const supabase = createClientComponentClient();
-  const isDev = process.env.NODE_ENV === "development";
+  const supabase = useMemo(() => createClientComponentClient(), []);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [windowHeight, setWindowHeight] = useState("100dvh");
 
   useEffect(() => {
-    const handleResize = () => {
-      setWindowHeight(`${window.innerHeight}px`);
-    };
-
-    setWindowHeight(`${window.innerHeight}px`);
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setUser(user);
-      } catch (error) {
-        console.error("Error fetching user:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    void supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      setLoading(false);
     });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
 
   const handleOAuthSignIn = async (provider: AuthProvider) => {
-    try {
-      await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-    } catch (error) {
-      console.error(`Error signing in with ${provider}:`, error);
-    }
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
   };
 
   if (loading) {
     return (
-      <div
-        className="grid place-items-center w-full"
-        style={{ height: windowHeight }}
-      >
-        <div className="text-center">
-          <Loader2 className="h-16 w-16 animate-spin mx-auto text-primary" />
-          <p className="mt-4 text-lg font-medium text-muted-foreground">
-            Ładowanie...
-          </p>
-        </div>
-      </div>
+      <main className="grid min-h-[100dvh] place-items-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Ładowanie" />
+      </main>
     );
   }
 
-  if (!user) {
-    return (
-      <LoginPage
-        onOAuthSignIn={handleOAuthSignIn}
-        windowHeight={windowHeight}
-      />
-    );
-  }
+  if (!user) return <LoginPage onOAuthSignIn={handleOAuthSignIn} />;
 
   return (
     <ChatProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <main className="min-w-0 flex-1">
-          <div className="flex flex-col h-[100dvh] overflow-hidden">
-            <Navbar />
-            <div className="min-h-0 flex-1">
-              <ChatCard />
-            </div>
-          </div>
-        </main>
-      </SidebarProvider>
+      <main className="flex h-[100dvh] flex-col overflow-hidden">
+        <Navbar />
+        <div className="min-h-0 flex-1"><ChatCard /></div>
+      </main>
     </ChatProvider>
   );
 }

@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
-import { ChatCard } from "@/components/chatCard";
 import { ChatProvider } from "./ChatContext";
+import { ChatWorkspace } from "@/components/chat-workspace";
 import { createClientComponentClient } from "@/lib/supabase/client";
-import Navbar from "@/components/navbar";
 import LoginPage, { type AuthProvider } from "@/components/landing-page";
 
 export default function Home() {
@@ -46,10 +45,7 @@ export default function Home() {
 
   return (
     <ChatProvider>
-      <main className="flex h-[100dvh] flex-col overflow-hidden">
-        <Navbar />
-        <div className="min-h-0 flex-1"><ChatCard /></div>
-      </main>
+      <ChatWorkspace />
     </ChatProvider>
   );
 }

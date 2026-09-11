@@ -1,24 +1,52 @@
-import * as React from "react";
+"use client"
 
-import { cn } from "@/lib/utils";
+import * as React from "react"
 
-export type GenerationStage = "thinking" | "searching" | "responding" | "idle";
+import { cn } from "@/lib/utils"
+
+export type GenerationStage = "thinking" | "searching" | "responding" | "idle"
 
 export type GenerationStatusProps = React.ComponentProps<"span"> & {
-  active?: boolean;
-  stage?: GenerationStage;
-  label?: string;
-  size?: number;
-};
+  /** When true, shows the indicator. Prefer this over stage for simple UIs. */
+  active?: boolean
+  /** Optional legacy stage. Non-idle stages show the indicator. */
+  stage?: GenerationStage
+  /** Optional label next to the indicator. */
+  label?: string
+  /** Indicator box size in px; the dot fills half of it. */
+  size?: number
+}
 
 const STAGE_LABELS: Record<GenerationStage, string | undefined> = {
   thinking: "Thinking",
   searching: "Searching",
   responding: "Responding",
   idle: undefined,
-};
+}
 
-/** Copied from miskibin/chat-components: one quiet, accessible loading cue. */
+/**
+ * One dot, breathing. No timers and no frame state: the browser owns the
+ * animation, and `motion-safe` drops it entirely for readers who asked for
+ * less motion — the dot simply sits there instead.
+ */
+function PulseDot({ size = 16 }: { size?: number }) {
+  return (
+    <span
+      data-slot="generation-status-spinner"
+      aria-label="Loading"
+      role="status"
+      className="inline-grid shrink-0 place-items-center text-muted-foreground"
+      style={{ width: size, height: size }}
+    >
+      <span
+        aria-hidden
+        style={{ width: size / 2, height: size / 2 }}
+        className="rounded-full bg-current motion-safe:animate-pulse"
+      />
+    </span>
+  )
+}
+
 export function GenerationStatus({
   active,
   stage = "idle",
@@ -27,10 +55,10 @@ export function GenerationStatus({
   size = 16,
   ...props
 }: GenerationStatusProps) {
-  const show = active ?? stage !== "idle";
-  if (!show) return null;
+  const show = active ?? stage !== "idle"
+  if (!show) return null
 
-  const text = label ?? STAGE_LABELS[stage];
+  const text = label ?? STAGE_LABELS[stage]
 
   return (
     <span
@@ -38,27 +66,21 @@ export function GenerationStatus({
       data-stage={stage}
       aria-live="polite"
       aria-busy="true"
-      className={cn("inline-flex items-center gap-1.5 text-[13px] text-muted-foreground", className)}
+      className={cn(
+        "inline-flex items-center gap-1.5 text-[13px] text-muted-foreground",
+        className
+      )}
       {...props}
     >
-      <span
-        data-slot="generation-status-spinner"
-        aria-label="Ładowanie"
-        role="status"
-        className="inline-grid shrink-0 place-items-center text-muted-foreground"
-        style={{ width: size, height: size }}
-      >
-        <span
-          aria-hidden
-          style={{ width: size / 2, height: size / 2 }}
-          className="rounded-full bg-current motion-safe:animate-pulse"
-        />
-      </span>
+      <PulseDot size={size} />
       {text ? (
-        <span data-slot="generation-status-label" className="truncate motion-safe:animate-pulse">
+        <span
+          data-slot="generation-status-label"
+          className="truncate motion-safe:animate-pulse"
+        >
           {text}
         </span>
       ) : null}
     </span>
-  );
+  )
 }

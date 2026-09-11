@@ -77,7 +77,7 @@ export default function Footer() {
                     >
                       {link.icon &&
                         React.cloneElement(link.icon as React.ReactElement<{ "aria-hidden"?: boolean }>, {
-                          "aria-hidden": "true",
+                          "aria-hidden": true,
                         })}
                       <span>{link.label}</span>
                       {link.href.startsWith("http") && (

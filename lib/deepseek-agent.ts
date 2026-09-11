@@ -72,7 +72,7 @@ export function createMinimalDeepAgent() {
   });
 }
 
-function toLangChainMessages(messages: Message[]) {
+export function toLangChainMessages(messages: Message[]) {
   return messages.map((message) =>
     message.role === "user"
       ? new HumanMessage(message.content)

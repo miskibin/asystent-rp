@@ -97,10 +97,10 @@ export default function Home() {
     <ChatProvider>
       <SidebarProvider>
         <AppSidebar />
-        <main className="w-full">
+        <main className="min-w-0 flex-1">
           <div className="flex flex-col h-[100dvh] overflow-hidden">
             <Navbar />
-            <div className="flex-grow overflow-auto">
+            <div className="min-h-0 flex-1">
               <ChatCard />
             </div>
           </div>

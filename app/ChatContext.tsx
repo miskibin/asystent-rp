@@ -23,6 +23,8 @@ interface ChatContextType {
   // From useChatLogic
   isLoading: boolean;
   status: string | null;
+  errorMessage: string | null;
+  clearError: () => void;
   handleSubmit: (e: React.FormEvent, text?: string) => Promise<void>;
   stopGenerating: () => void;
   editingMessageId: string | null;

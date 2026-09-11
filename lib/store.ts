@@ -1,8 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { ChatOptions, Message, Model, ChatPlugin, Artifact } from "./types";
-import { plugins } from "./plugins";
-import { BufferMemory, MemoryVariables } from "langchain/memory";
+import type { ChatOptions, ChatPlugin, Message, Model } from "./types";
 
 interface ChatState {
   messages: Message[];
@@ -10,7 +8,6 @@ interface ChatState {
   systemPrompt: string;
   input: string;
   plugins: ChatPlugin[];
-  memory: BufferMemory;
   patrons: string[];
   models: Model[];
   selectedModel: string;
@@ -23,17 +20,21 @@ interface ChatState {
   setInput: (input: string) => void;
   setPlugins: (plugins: ChatPlugin[]) => void;
   togglePlugin: (name: string) => void;
-  getMemoryVariables: () => Promise<MemoryVariables>;
-  addToMemory: (humanMessage: string, aiMessage: string) => Promise<void>;
   clearMemory: () => void;
   setPatrons: (patrons: string[]) => void;
   setModels: (models: Model[]) => void;
   setSelectedModel: (model: string) => void;
 }
 
+const model: Model = {
+  name: "deepseek-flash",
+  short: "DeepSeek V4 Flash",
+  description: "thinking wyłączone",
+};
+
 export const useChatStore = create<ChatState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       messages: [],
       options: {
         temperature: 0.3,
@@ -41,126 +42,47 @@ export const useChatStore = create<ChatState>()(
         streaming: true,
         topK: 40,
         repeatPenalty: 1.1,
-        maxTokens: 512,
+        maxTokens: 1024,
       },
-      systemPrompt:
-        "You are a polish legal assistant. Your answers are SHORT and precise. You use rich markdown syntax to format your answers.",
+      systemPrompt: "",
       input: "",
-      plugins: plugins,
-      memory: new BufferMemory({
-        returnMessages: true,
-        memoryKey: "history",
-        inputKey: "input",
-        outputKey: "output",
-      }),
+      plugins: [],
       patrons: [],
-      models: [
-        {
-          name: "meta-llama/Llama-Vision-Free",
-          description: "Nie zalecany",
-          short: "Llama-Vision-Free",
-        },
-        {
-          name: "gpt-4o-mini",
-          description: "optymalny",
-          short: "gpt-4o-mini",
-        },
-        {
-          short: "Llama-3.2-11B",
-          name: "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-          description: "powolny",
-        },
-        {
-          short: "Llama-3.3-70B",
-          name: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-          description: "eksperymentalny",
-        },
-      ],
-      selectedModel: "gpt-4o-mini",
-
+      models: [model],
+      selectedModel: model.name,
       addMessage: (message) =>
         set((state) => ({
-          messages: [
-            ...state.messages,
-            {
-              ...message,
-              artifacts: message.artifacts || [], // Ensure artifacts array exists
-            },
-          ],
+          messages: [...state.messages, { ...message, artifacts: message.artifacts || [] }],
         })),
-
       updateMessage: (id, updatedMessage) =>
         set((state) => ({
-          messages: state.messages.map((msg) =>
-            msg.id === id
+          messages: state.messages.map((message) =>
+            message.id === id
               ? {
                   ...updatedMessage,
-                  artifacts: updatedMessage.artifacts || msg.artifacts,
-                  data: updatedMessage.data || msg.data,
+                  artifacts: updatedMessage.artifacts || message.artifacts,
+                  data: updatedMessage.data || message.data,
                 }
-              : msg
+              : message
           ),
         })),
-
       deleteMessage: (id) =>
-        set((state) => ({
-          messages: state.messages.filter((msg) => msg.id !== id),
-        })),
-
-      clearMessages: () => {
-        set({ messages: [] });
-        get().clearMemory();
-      },
-
-      setOptions: (newOptions) =>
-        set((state) => ({ options: { ...state.options, ...newOptions } })),
-
-      setSystemPrompt: (prompt) => set({ systemPrompt: prompt }),
+        set((state) => ({ messages: state.messages.filter((message) => message.id !== id) })),
+      clearMessages: () => set({ messages: [] }),
+      setOptions: (options) => set((state) => ({ options: { ...state.options, ...options } })),
+      setSystemPrompt: () => set({ systemPrompt: "" }),
       setInput: (input) => set({ input }),
-      setPlugins: (plugins) => set({ plugins }),
-
-      togglePlugin: (name) =>
-        set((state) => ({
-          plugins: state.plugins.map((plugin) =>
-            plugin.name === name
-              ? { ...plugin, enabled: !plugin.enabled }
-              : plugin
-          ),
-        })),
-
-      getMemoryVariables: async () => {
-        const memoryVariables = await get().memory.loadMemoryVariables({});
-        return memoryVariables;
-      },
-
-      addToMemory: async (humanMessage: string, aiMessage: string) => {
-        await get().memory.saveContext(
-          { input: humanMessage },
-          { output: aiMessage }
-        );
-      },
-
-      clearMemory: () => {
-        set({
-          memory: new BufferMemory({
-            returnMessages: true,
-            inputKey: "input",
-            outputKey: "output",
-          }),
-        });
-      },
-
+      setPlugins: () => set({ plugins: [] }),
+      togglePlugin: () => undefined,
+      clearMemory: () => undefined,
       setPatrons: (patrons) => set({ patrons }),
-      setModels: (models) => set({ models }),
-      setSelectedModel: (model) => set({ selectedModel: model }),
+      setModels: () => set({ models: [model] }),
+      setSelectedModel: () => set({ selectedModel: model.name }),
     }),
     {
       name: "chat-storage",
       partialize: (state) => ({
-        messages: state.messages.map((msg) => ({
-          ...msg,
-          artifacts: msg.artifacts || [], // Ensure artifacts are persisted
-        })),
+        messages: state.messages,
         options: state.options,
       }),
     }

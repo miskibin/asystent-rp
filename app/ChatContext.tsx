@@ -1,8 +1,7 @@
 "use client";
 import React, { createContext, useContext, ReactNode, useState } from "react";
 import { useChatLogic } from "@/hooks/useChatLogic";
-import { useFileHandling } from "@/hooks/useFileHandling";
-import { ChatOptions, Model, Message, ChatPlugin } from "@/lib/types";
+import { ChatOptions, Message, ChatPlugin } from "@/lib/types";
 import { useChatStore } from "@/lib/store";
 
 interface ChatContextType {
@@ -28,14 +27,10 @@ interface ChatContextType {
   editingMessageId: string | null;
   setEditingMessageId: React.Dispatch<React.SetStateAction<string | null>>;
   regenerateMessage: (id: string) => Promise<void>;
-  // From useFileHandling
-  isPdfParsing: boolean;
-  handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
-
   // Local state
   isPromptDialogOpen: boolean;
   setIsPromptDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  togglePlugin: any; // TODO fix type
+  togglePlugin: (name: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -45,7 +40,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
 }) => {
   const chatStore = useChatStore();
   const chatLogic = useChatLogic();
-  const fileLogic = useFileHandling(chatStore.setInput);
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
 
   return (
@@ -53,7 +47,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({
       value={{
         ...chatStore,
         ...chatLogic,
-        ...fileLogic,
         isPromptDialogOpen,
         setIsPromptDialogOpen,
       }}

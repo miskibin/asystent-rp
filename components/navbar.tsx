@@ -14,8 +14,8 @@ import { useChatStore } from "@/lib/store";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   createClientComponentClient,
-  User,
-} from "@supabase/auth-helpers-nextjs";
+} from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { isUserPatron } from "@/lib/get-patronite-users";
 

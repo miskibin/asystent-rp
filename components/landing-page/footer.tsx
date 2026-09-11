@@ -76,7 +76,7 @@ export default function Footer() {
                       className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {link.icon &&
-                        React.cloneElement(link.icon, {
+                        React.cloneElement(link.icon as React.ReactElement<{ "aria-hidden"?: boolean }>, {
                           "aria-hidden": "true",
                         })}
                       <span>{link.label}</span>

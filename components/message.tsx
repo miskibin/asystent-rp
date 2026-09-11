@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,15 +10,10 @@ import {
   Check,
   X,
   Trash2,
-  FileText,
-  Download,
-  FastForward,
 } from "lucide-react";
 import { useChatContext } from "@/app/ChatContext";
 import { Message } from "@/lib/types";
 import { FeedbackDialog } from "@/components/feedback-dialog";
-import PluginDataDialog from "./plugin-data-dialog";
-import SummarableTextDialog from "./ActSectionDialog";
 import { cn } from "@/lib/utils";
 import { useFeedbackLogic } from "@/hooks/feedback";
 import { ContinuePromptPlaceholder, PROMPTS } from "@/lib/prompts";
@@ -39,7 +34,6 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     editMessage,
     regenerateMessage,
     deleteMessage,
-    clearMessages,
   } = useChatContext();
   const [editInput, setEditInput] = useState(message.content);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -134,22 +128,6 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     );
   };
 
-  const renderArtifacts = () => {
-    if (!message.artifacts?.length || isGenerating) {
-      return null;
-    }
-
-    return (
-      <>
-        <div className="flex flex-wrap gap-2 mt-2">
-          <PluginDataDialog artifacts={message.artifacts} />
-          <SummarableTextDialog actSections={message.data || []} />
-        </div>
-       
-      </>
-    );
-  };
-
   return (
     <div className="relative mt-2 mb-1">
       {message.role === "assistant" && (
@@ -199,7 +177,6 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
               ) : (
                 <MarkdownResponse content={message.content} />
               )}
-              {renderArtifacts()}
               {!isGenerating && renderMessageButtons()}
             </div>
           )}

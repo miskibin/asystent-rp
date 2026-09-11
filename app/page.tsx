@@ -4,8 +4,8 @@ import { ChatCard } from "@/components/chatCard";
 import { ChatProvider } from "./ChatContext";
 import {
   createClientComponentClient,
-  User,
-} from "@supabase/auth-helpers-nextjs";
+} from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/sidebar";
 import Navbar from "@/components/navbar";

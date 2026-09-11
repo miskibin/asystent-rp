@@ -33,8 +33,8 @@ import { Database } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   createClientComponentClient,
-  User,
-} from "@supabase/auth-helpers-nextjs";
+} from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 import { isUserPatron } from "@/lib/get-patronite-users";
 
 const Sidebar = () => {

@@ -6,7 +6,7 @@ import {
   UseFeedbackLogicReturn,
 } from "@/app/types/feedback";
 import { trimMessage } from "@/app/utils/feedback";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/client";
 import { useChatStore } from "@/lib/store";
 
 export function useFeedbackLogic(): UseFeedbackLogicReturn {

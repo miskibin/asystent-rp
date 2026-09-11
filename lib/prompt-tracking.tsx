@@ -1,4 +1,4 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createClientComponentClient } from "@/lib/supabase/client";
 import { isUserPatron } from "./get-patronite-users";
 
 type LimitType = "chat_submission" | "paid_model_usage";

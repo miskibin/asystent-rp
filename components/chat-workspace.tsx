@@ -6,14 +6,22 @@ import { useRouter } from "next/navigation"
 
 import { useChatContext } from "@/app/ChatContext"
 import { ChatInput, type ChatInputPayload } from "@/components/ui/chat-input"
-import { ChatSidebar, SideIconBtn, SideRow, SidebarCollapsibleSection } from "@/components/ui/chat-sidebar"
+import {
+  ChatSidebar,
+  SideActionRow,
+  SideIconBtn,
+  SideRow,
+  SidebarCollapsibleSection,
+} from "@/components/ui/chat-sidebar"
 import { MessageList, type ChatMessageData } from "@/components/ui/message-list"
 import { PromptSuggestions, type PromptSuggestion } from "@/components/ui/prompt-suggestions"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { useToast } from "@/hooks/use-toast"
 import { runLayoutTransition } from "@/lib/layout-transition"
 import { createClientComponentClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
-import { useToast } from "@/hooks/use-toast"
+
+const DESKTOP_QUERY = "(min-width: 768px)"
 
 const SUGGESTIONS: PromptSuggestion[] = [
   { id: "explain", label: "Wyjaśnij mi trudny temat prostymi słowami" },
@@ -21,7 +29,29 @@ const SUGGESTIONS: PromptSuggestion[] = [
   { id: "draft", label: "Napisz krótką wersję roboczą" },
 ]
 
-function ActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = React.useState(true)
+
+  React.useEffect(() => {
+    const media = window.matchMedia(DESKTOP_QUERY)
+    const sync = () => setIsDesktop(media.matches)
+    sync()
+    media.addEventListener("change", sync)
+    return () => media.removeEventListener("change", sync)
+  }, [])
+
+  return isDesktop
+}
+
+function ActionButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       type="button"
@@ -50,6 +80,7 @@ export function ChatWorkspace() {
     editMessage,
     regenerateMessage,
   } = useChatContext()
+  const isDesktop = useIsDesktop()
   const [collapsed, setCollapsed] = React.useState(false)
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const [chatsOpen, setChatsOpen] = React.useState(true)
@@ -67,16 +98,32 @@ export function ChatWorkspace() {
     [messages]
   )
   const history = React.useMemo(
-    () => chatMessages.filter((message) => message.sender === "user").map((message) => ({ id: message.id, text: message.content })),
+    () =>
+      chatMessages
+        .filter((message) => message.sender === "user")
+        .map((message) => ({ id: message.id, text: message.content })),
     [chatMessages]
   )
   const isEmpty = chatMessages.length === 0
   const conversationTitle = history[0]?.text || "Nowa rozmowa"
+  const drawerOpen = mobileOpen && !isDesktop
+
+  React.useEffect(() => {
+    if (!drawerOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false)
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [drawerOpen])
 
   const send = React.useCallback(
     (payload: ChatInputPayload) => {
       if (payload.files.length > 0) {
-        toast({ title: "Załączniki nie są jeszcze obsługiwane", description: "Wyślij na razie wiadomość tekstową." })
+        toast({
+          title: "Załączniki nie są jeszcze obsługiwane",
+          description: "Wyślij na razie wiadomość tekstową.",
+        })
         return
       }
       const text = payload.text.trim()
@@ -102,66 +149,71 @@ export function ChatWorkspace() {
     router.refresh()
   }, [router, supabase])
 
-  const nav = (
-    <SideRow icon={<Pencil className="size-4" />} onClick={newChat}>Nowa rozmowa</SideRow>
-  )
-  const rail = (
-    <SideIconBtn label="Nowa rozmowa" onClick={newChat}><Pencil className="size-4" /></SideIconBtn>
-  )
-  const footer = (
-    <button
-      type="button"
-      onClick={() => void signOut()}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/60"
-    >
-      <LogOut className="size-4" />
-      <span>Wyloguj</span>
-    </button>
-  )
-  const sidebarContent = (
-    <SidebarCollapsibleSection title="Rozmowy" open={chatsOpen} onToggle={() => setChatsOpen((value) => !value)} count={1}>
-      <SideRow icon={<MessageSquare className="size-4" />} className="bg-sidebar-accent text-sidebar-accent-foreground">
-        <span className="truncate">{conversationTitle}</span>
-      </SideRow>
-    </SidebarCollapsibleSection>
-  )
-
   return (
     <div className="relative flex h-[100dvh] min-h-0 overflow-hidden bg-background">
-      <div className="hidden h-full shrink-0 md:block">
-        <ChatSidebar
-          collapsed={collapsed}
-          onCollapsedChange={setCollapsed}
-          brand={<span className="truncate px-1 text-[15px] font-semibold tracking-tight">Asystent RP</span>}
-          nav={nav}
-          rail={rail}
-          footer={footer}
-          collapseLabel="Zwiń panel"
-          expandLabel="Otwórz panel"
-        >
-          {sidebarContent}
-        </ChatSidebar>
-      </div>
-
       <div
-        aria-hidden={!mobileOpen}
+        aria-hidden={!drawerOpen}
         onClick={() => setMobileOpen(false)}
         className={cn(
           "absolute inset-0 z-40 bg-foreground/20 backdrop-blur-[1px] transition-opacity duration-200 md:hidden",
-          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          drawerOpen ? "opacity-100" : "pointer-events-none opacity-0"
         )}
       />
-      <div className={cn("absolute inset-y-0 left-0 z-50 h-full shadow-xl transition-transform duration-200 md:hidden", !mobileOpen && "-translate-x-full")}>
+
+      <div
+        className={cn(
+          "z-50 h-full shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:shadow-xl max-md:transition-transform max-md:duration-200 md:relative",
+          !drawerOpen && "max-md:-translate-x-full"
+        )}
+      >
         <ChatSidebar
-          collapsed={false}
-          onCollapsedChange={() => setMobileOpen(false)}
-          brand={<span className="truncate px-1 text-[15px] font-semibold tracking-tight">Asystent RP</span>}
-          nav={nav}
-          rail={rail}
-          footer={footer}
-          collapseLabel="Zamknij panel"
+          collapsed={isDesktop ? collapsed : false}
+          onCollapsedChange={(next) =>
+            isDesktop ? setCollapsed(next) : setMobileOpen(false)
+          }
+          brand={
+            <span className="truncate px-1 text-[15px] font-semibold tracking-tight text-foreground">
+              Asystent RP
+            </span>
+          }
+          nav={
+            <SideActionRow>
+              <SideIconBtn label="Nowa rozmowa" onClick={newChat}>
+                <Pencil className="size-4" />
+              </SideIconBtn>
+            </SideActionRow>
+          }
+          rail={
+            <SideIconBtn label="Nowa rozmowa" onClick={newChat}>
+              <Pencil className="size-4" />
+            </SideIconBtn>
+          }
+          footer={
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/60"
+            >
+              <LogOut className="size-4" />
+              <span>Wyloguj</span>
+            </button>
+          }
+          collapseLabel="Zwiń panel"
+          expandLabel="Otwórz panel"
         >
-          {sidebarContent}
+          <SidebarCollapsibleSection
+            title="Rozmowy"
+            open={chatsOpen}
+            onToggle={() => setChatsOpen((value) => !value)}
+            count={1}
+          >
+            <SideRow
+              icon={<MessageSquare className="size-4" />}
+              className="bg-sidebar-accent text-sidebar-accent-foreground"
+            >
+              <span className="truncate">{conversationTitle}</span>
+            </SideRow>
+          </SidebarCollapsibleSection>
         </ChatSidebar>
       </div>
 
@@ -176,10 +228,20 @@ export function ChatWorkspace() {
         </button>
         <ThemeToggle floating={false} className="absolute top-3 right-3 z-30" />
 
-        <div className={cn("flex min-h-0 flex-1 flex-col overflow-x-hidden", isEmpty && "justify-center")}>
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col overflow-x-hidden",
+            isEmpty && "justify-center"
+          )}
+        >
           {isEmpty ? (
-            <div data-slot="demo-opening" className="mx-auto w-full max-w-3xl px-3 pb-5 sm:px-4">
-              <h1 className="text-center text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-3xl">Jak mogę pomóc?</h1>
+            <div
+              data-slot="demo-opening"
+              className="mx-auto w-full max-w-3xl px-3 pb-5 sm:px-4"
+            >
+              <h1 className="text-center text-2xl font-semibold tracking-tight text-balance text-foreground sm:text-3xl">
+                Jak mogę pomóc?
+              </h1>
             </div>
           ) : (
             <MessageList
@@ -191,9 +253,24 @@ export function ChatWorkspace() {
               renderActions={(message) =>
                 message.sender === "assistant" ? (
                   <div className="-mt-2 mb-4 flex gap-1 opacity-60 transition-opacity focus-within:opacity-100 hover:opacity-100">
-                    <ActionButton label="Kopiuj" onClick={() => void navigator.clipboard.writeText(message.content)}><Copy /></ActionButton>
-                    <ActionButton label="Wygeneruj ponownie" onClick={() => void regenerateMessage(message.id)}><RefreshCw /></ActionButton>
-                    <ActionButton label="Usuń" onClick={() => deleteMessage(message.id)}><Trash2 /></ActionButton>
+                    <ActionButton
+                      label="Kopiuj"
+                      onClick={() => void navigator.clipboard.writeText(message.content)}
+                    >
+                      <Copy />
+                    </ActionButton>
+                    <ActionButton
+                      label="Wygeneruj ponownie"
+                      onClick={() => void regenerateMessage(message.id)}
+                    >
+                      <RefreshCw />
+                    </ActionButton>
+                    <ActionButton
+                      label="Usuń"
+                      onClick={() => deleteMessage(message.id)}
+                    >
+                      <Trash2 />
+                    </ActionButton>
                   </div>
                 ) : null
               }
@@ -202,15 +279,29 @@ export function ChatWorkspace() {
 
           <div data-slot="chat-composer" className="w-full shrink-0">
             <ChatInput
-              className={cn("transition-[padding] duration-300 ease-out", isEmpty && "pb-0 sm:pb-0")}
+              className={cn(
+                "transition-[padding] duration-300 ease-out",
+                isEmpty && "pb-0 sm:pb-0"
+              )}
               placeholder="Napisz wiadomość…"
               isGenerating={isLoading}
               onStop={stopGenerating}
               onSend={send}
               history={history}
-              tools={<span className="hidden text-[12px] text-muted-foreground sm:inline">DeepSeek 4.1 Flash</span>}
+              tools={
+                <span className="hidden text-[12px] text-muted-foreground sm:inline">
+                  DeepSeek 4.1 Flash
+                </span>
+              }
             />
-            {isEmpty ? <PromptSuggestions items={SUGGESTIONS} onSelect={(item) => send({ text: item.label, files: [], skills: [] })} /> : null}
+            {isEmpty ? (
+              <PromptSuggestions
+                items={SUGGESTIONS}
+                onSelect={(item) =>
+                  send({ text: item.label, files: [], skills: [] })
+                }
+              />
+            ) : null}
           </div>
         </div>
       </main>

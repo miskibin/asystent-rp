@@ -396,16 +396,16 @@ export function SidebarResizeRail({
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       className={cn(
-        "group/sidebar-rail absolute inset-y-0 z-30 w-2 touch-none select-none",
-        side === "right" ? "left-0" : "right-0",
+        "group/sidebar-rail absolute inset-y-0 z-30 w-3 touch-none select-none",
+        side === "right" ? "left-0 -translate-x-1/2" : "right-0 translate-x-1/2",
         disabled ? "pointer-events-none" : "cursor-col-resize",
         "outline-none",
-        // The hit area is 8px wide; only a 2px line ever paints.
-        "after:absolute after:inset-y-0 after:w-px after:transition-colors",
-        side === "right" ? "after:left-0" : "after:right-0",
-        "hover:after:w-0.5 hover:after:bg-sidebar-border",
-        "data-[resizing=true]:after:w-0.5 data-[resizing=true]:after:bg-sidebar-ring/60",
-        "focus-visible:after:w-0.5 focus-visible:after:bg-sidebar-ring focus-visible:after:ring-2 focus-visible:after:ring-sidebar-ring/60",
+        // Sits on the seam, not over titles. Idle line is transparent; hover
+        // and drag bring it in at ~70% so the border still reads underneath.
+        "after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:rounded-full after:bg-sidebar-border after:opacity-0 after:transition-opacity after:duration-150 after:content-['']",
+        "hover:after:opacity-70",
+        "data-[resizing=true]:after:bg-sidebar-ring/70 data-[resizing=true]:after:opacity-100",
+        "focus-visible:after:bg-sidebar-ring focus-visible:after:opacity-100 focus-visible:after:ring-2 focus-visible:after:ring-sidebar-ring/60",
         className
       )}
     />

@@ -1,9 +1,10 @@
+@import "streamdown/styles.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
 @layer utilities {
@@ -123,4 +124,7 @@ body {
 
 .animate-scale-check {
   animation: scale-check 0.3s ease-out;
+}
+[data-slot="chat-input"] button[aria-label="Attach file"] {
+  display: none;
 }

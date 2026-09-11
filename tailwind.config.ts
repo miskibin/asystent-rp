@@ -6,6 +6,10 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./node_modules/streamdown/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/code/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/mermaid/dist/**/*.{js,mjs}",
+    "./node_modules/@streamdown/math/dist/**/*.{js,mjs}",
   ],
   theme: {
   	extend: {

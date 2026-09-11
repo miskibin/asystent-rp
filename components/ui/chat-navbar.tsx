@@ -1,14 +1,14 @@
-import * as React from "react";
+import * as React from "react"
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
 export type ChatNavbarProps = React.ComponentProps<"header"> & {
-  title?: React.ReactNode;
-  left?: React.ReactNode;
-  right?: React.ReactNode;
-};
+  /** String titles are truncated automatically; nodes are rendered as-is. */
+  title?: React.ReactNode
+  left?: React.ReactNode
+  right?: React.ReactNode
+}
 
-/** Copied from miskibin/chat-components: a compact chat header with slots. */
 export function ChatNavbar({
   title,
   left,
@@ -26,10 +26,16 @@ export function ChatNavbar({
       )}
       {...props}
     >
-      <div data-slot="chat-navbar-left" className="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        data-slot="chat-navbar-left"
+        className="flex min-w-0 flex-1 items-center gap-2"
+      >
         {left}
         {typeof title === "string" ? (
-          <h1 data-slot="chat-navbar-title" className="truncate text-[13.5px] font-medium text-foreground">
+          <h1
+            data-slot="chat-navbar-title"
+            className="truncate text-[13.5px] font-medium text-foreground"
+          >
             {title}
           </h1>
         ) : (
@@ -37,9 +43,12 @@ export function ChatNavbar({
         )}
         {children}
       </div>
-      <div data-slot="chat-navbar-right" className="flex shrink-0 items-center gap-1">
+      <div
+        data-slot="chat-navbar-right"
+        className="flex shrink-0 items-center gap-1"
+      >
         {right}
       </div>
     </header>
-  );
+  )
 }

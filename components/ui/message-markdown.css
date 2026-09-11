@@ -1,0 +1,288 @@
+.lc-markdown {
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.65;
+  min-width: 0;
+  /* Long URLs and identifiers must never push the page sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* Reasoning stays quieter than the answer — inherit the muted wrapper. */
+[data-slot="message-reasoning"] .lc-markdown,
+[data-slot="message-reasoning"] .lc-markdown h1,
+[data-slot="message-reasoning"] .lc-markdown h2,
+[data-slot="message-reasoning"] .lc-markdown h3,
+[data-slot="message-reasoning"] .lc-markdown h4,
+[data-slot="message-reasoning"] .lc-markdown strong,
+[data-slot="message-reasoning"] .lc-markdown code:not(pre code) {
+  color: inherit;
+}
+
+/* Wide content scrolls inside its own box instead of the page. */
+.lc-markdown [data-streamdown="table-wrapper"] {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.lc-markdown img,
+.lc-markdown [data-streamdown="image"] img,
+.lc-markdown [data-streamdown="image"] {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+.lc-markdown .katex {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.lc-markdown .katex-display {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+
+.lc-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  overflow-wrap: normal;
+}
+
+.lc-markdown th,
+.lc-markdown td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.lc-markdown th {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.lc-markdown [data-streamdown="mermaid"] {
+  overflow-x: auto;
+  margin: 10px 0 14px;
+}
+
+.lc-markdown p {
+  margin: 0 0 12px;
+}
+
+.lc-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.lc-markdown h1,
+.lc-markdown h2,
+.lc-markdown h3,
+.lc-markdown h4 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+.lc-markdown h1 {
+  font-size: 22px;
+}
+
+.lc-markdown h2 {
+  font-size: 19px;
+}
+
+.lc-markdown h3 {
+  font-size: 16.5px;
+}
+
+.lc-markdown h4 {
+  font-size: 15px;
+}
+
+.lc-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lc-markdown strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.lc-markdown ul,
+.lc-markdown ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.lc-markdown li {
+  margin: 4px 0;
+}
+
+.lc-markdown blockquote {
+  margin: 12px 0;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.lc-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+}
+
+.lc-markdown code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--muted);
+  color: var(--foreground);
+  padding: 1px 6px;
+  border-radius: calc(var(--radius) * 0.6);
+}
+
+.lc-markdown [data-streamdown="code-block"] {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  margin: 8px 0 12px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--muted);
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.lc-markdown [data-streamdown="code-block-header"] {
+  grid-column: 1;
+  grid-row: 1;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lc-markdown [data-streamdown="code-block"] > :has(> [data-streamdown="code-block-actions"]) {
+  grid-column: 2;
+  grid-row: 1;
+  position: static;
+  top: auto;
+  margin-top: 0;
+  height: 2rem;
+  padding-right: 6px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--border);
+}
+
+.lc-markdown [data-streamdown="code-block-actions"] {
+  height: auto;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.lc-markdown [data-streamdown="code-block-body"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 10px;
+  background: transparent;
+}
+
+.lc-markdown [data-streamdown="code-block"] pre,
+.lc-markdown [data-streamdown="code-block"] pre code {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.lc-markdown pre {
+  margin: 8px 0 12px;
+  background: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.lc-markdown pre code {
+  display: block;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--foreground);
+  background: transparent;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+/*
+ * GitHub alerts — a blockquote whose first line was `[!NOTE]`, marked by
+ * `remarkGithubAlerts`. The five hues are deliberate raw values, the same
+ * exception the diff +/- counts take: no theme token carries "tip" or
+ * "warning", and a mid-lightness oklch reads on both surfaces. Everything else
+ * — the tint, the text — is mixed from that one hue and the theme's own
+ * foreground, so a callout still belongs to whatever theme is on.
+ */
+.lc-markdown blockquote[data-alert] {
+  --lc-alert: var(--muted-foreground);
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--lc-alert);
+  border-radius: calc(var(--radius) * 0.6);
+  background: color-mix(in oklab, var(--lc-alert) 9%, transparent);
+  color: var(--foreground);
+  /* The renderer italicizes quotes; a callout is not one. */
+  font-style: normal;
+}
+
+.lc-markdown blockquote[data-alert]::before {
+  content: attr(data-alert);
+  display: block;
+  margin-bottom: 4px;
+  color: var(--lc-alert);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+}
+
+.lc-markdown blockquote[data-alert] > :last-child {
+  margin-bottom: 0;
+}
+
+.lc-markdown blockquote[data-alert="note"] {
+  --lc-alert: oklch(0.62 0.14 250);
+}
+
+.lc-markdown blockquote[data-alert="tip"] {
+  --lc-alert: oklch(0.62 0.13 155);
+}
+
+.lc-markdown blockquote[data-alert="important"] {
+  --lc-alert: oklch(0.62 0.16 300);
+}
+
+.lc-markdown blockquote[data-alert="warning"] {
+  --lc-alert: oklch(0.68 0.14 75);
+}
+
+.lc-markdown blockquote[data-alert="caution"] {
+  --lc-alert: var(--destructive);
+}

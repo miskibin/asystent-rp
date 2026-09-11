@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export type AuthProvider = "google" | "github";
+export type AuthProvider = "google" | "github" | "discord";
 
 export default function LoginPage({ onOAuthSignIn }: { onOAuthSignIn: (provider: AuthProvider) => void | Promise<void> }) {
   return (
@@ -23,3 +23,4 @@ export default function LoginPage({ onOAuthSignIn }: { onOAuthSignIn: (provider:
     </main>
   );
 }
+

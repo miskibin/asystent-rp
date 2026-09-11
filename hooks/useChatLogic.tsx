@@ -30,7 +30,9 @@ export const useChatLogic = () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: history.map(({ role, content }) => ({ role, content })),
+        messages: history
+          .filter((message) => message.role === "user" || message.role === "assistant")
+          .map(({ role, content }) => ({ role, content })),
       }),
       signal: abortControllerRef.current.signal,
     });

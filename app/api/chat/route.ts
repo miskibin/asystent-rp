@@ -54,13 +54,17 @@ export async function POST(request: NextRequest) {
           );
         }
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Assistant failed to respond";
+        console.error("DeepSeek stream failed", error);
         controller.enqueue(
           encoder.encode(
             sse({
               type: "error",
-              messages: [{ role: "assistant", content: message }],
+              messages: [
+                {
+                  role: "assistant",
+                  content: "Asystent chwilowo nie może odpowiedzieć.",
+                },
+              ],
             })
           )
         );

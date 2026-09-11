@@ -9,11 +9,9 @@ let browserClient: SupabaseClient | undefined;
 export function createClientComponentClient(): SupabaseClient {
   if (browserClient) return browserClient;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error("Missing Supabase browser environment variables");
-  }
+  // Keep static generation safe; deployed environments must provide the real values.
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholder-anon-key";
 
   browserClient = createBrowserClient(url, key);
   return browserClient;

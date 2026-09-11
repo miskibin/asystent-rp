@@ -1,253 +1,63 @@
-import React, { useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import {
-  Send,
-  StopCircle,
-  FileText,
-  Loader2,
-  Info,
-  AlertTriangle,
-} from "lucide-react";
+"use client";
+
+import { useEffect, useRef } from "react";
+import { AlertCircle, X } from "lucide-react";
+
 import InitialChatContent from "@/components/initial-page";
+import { ChatMessage } from "@/components/message";
 import { useChatContext } from "@/app/ChatContext";
-import LoadingDots from "./loadingDots";
-import { ChatMessage } from "./message";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ChatComposer } from "@/components/ui/chat-composer";
+import { GenerationStatus } from "@/components/ui/generation-status";
 
 export function ChatCard() {
-  const {
-    messages,
-    isLoading,
-    status,
-    input,
-    setInput,
-    handleSubmit,
-    isPdfParsing,
-    stopGenerating,
-    handleFileChange,
-    clearMessages, // Used when clicking `Zapytaj o coś innego`
-  } = useChatContext();
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { messages, isLoading, status, errorMessage, clearError, input, setInput, handleSubmit, isPdfParsing, stopGenerating, clearMessages } = useChatContext();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const visibleMessages = messages.filter((message) => message.content !== "");
+  const lastMessage = messages[messages.length - 1];
+  const isWaitingForFirstToken = isLoading && lastMessage?.content === "";
 
   useEffect(() => {
-    const shouldScroll = messages.length > 0 || isLoading || status;
+    if (messages.length === 0 && !isLoading) return;
+    const timeoutId = window.setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 50);
+    return () => window.clearTimeout(timeoutId);
+  }, [isLoading, messages, status]);
 
-    if (shouldScroll) {
-      const timeoutId = setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100); // Small delay to ensure content is rendered
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [messages, isLoading, status]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "56px";
-      }
-    }
+  const send = () => {
+    void handleSubmit(new Event("submit") as unknown as React.FormEvent);
   };
 
-  const adjustTextareaHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "56px";
-      const scrollHeight = textareaRef.current.scrollHeight;
-      textareaRef.current.style.height = `${Math.min(
-        Math.max(scrollHeight, 56),
-        200
-      )}px`;
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    adjustTextareaHeight();
-  };
-
-  const handlePdfFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    if (e.target.files && e.target.files[0]) {
-      await handleFileChange(e);
-      setTimeout(adjustTextareaHeight, 0);
-    }
-  };
-
-  const renderLoadingState = () => {
-    if (!isLoading || messages[messages.length - 1]?.content !== "") {
-      return null;
-    }
-
-    return (
-      <div className="flex w-full flex-col items-center justify-center space-y-4 my-8">
-        <div className="flex items-center justify-center space-x-2 text-muted-foreground ">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm font-medium">Myślę...</span>
-        </div>
-
-        {status && (
-          <div
-            className={cn(
-              "text-sm px-3 py-1 rounded-full",
-              "bg-primary/5 text-primary/80",
-              "flex items-center gap-2 max-w-md",
-              status.includes("Executing") && "animate-pulse"
-            )}
-          >
-            <div className="relative flex-shrink-0 h-2 w-2">
-              <div className="absolute h-2 w-2 bg-primary/60 rounded-full animate-ping" />
-              <div className="relative h-2 w-2 bg-primary rounded-full" />
-            </div>
-            <span className="truncate">
-              {status.includes("Executing")
-                ? status
-                    .replace("Executed", "Sprawdzam")
-                    .replace("tool...", "dane...")
-                : status}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
   return (
-    <Card className="h-full flex flex-col items-center border-t-0 shadow-none rounded-t-none">
-      <CardContent className="flex-grow w-full max-w-6xl overflow-y-auto px-1 sm:px-4">
-        {messages.length === 0 ? (
-          <InitialChatContent
-            onStarterClick={(text) =>
-              handleSubmit(
-                new Event("submit") as unknown as React.FormEvent,
-                text
-              )
-            }
-          />
-        ) : (
-          <div className="space-y-4">
-            {messages
-              .filter((message) => message.content !== "")
-              .map((message, index) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  isLastMessage={index === messages.length - 1}
-                />
-              ))}
-            {renderLoadingState()}
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </CardContent>
-      {!isLoading && messages.length >= 2 && (
-          <Button
-            onClick={clearMessages}
-            variant="ghost"
-            className=" mb-2 sm:mb-4 text-primary underline "
-          >
-            Zapytaj o coś innego
-          </Button>
-        )}
-      {isLoading && (
-        <div className="w-full max-w-3xl mx-auto px-4 mb-2 sm:mb-4">
-          <div className="flex items-start gap-3 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p>
-                Asystent może popełniać błędy. Aby je zminimalizować, wybierz
-                lepszy model.
-              </p>
+    <section className="flex h-full min-h-0 flex-col bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-3 py-5 sm:px-5 sm:py-7">
+          {visibleMessages.length === 0 ? (
+            <div className="flex min-h-full flex-1 items-center justify-center">
+              <InitialChatContent onStarterClick={(prompt) => void handleSubmit(new Event("submit") as unknown as React.FormEvent, prompt)} />
             </div>
-          </div>
+          ) : (
+            <div className="space-y-5">
+              {visibleMessages.map((message, index) => <ChatMessage key={message.id} message={message} isLastMessage={index === messages.length - 1} />)}
+              {isWaitingForFirstToken ? <GenerationStatus active label={status || "Przygotowuję odpowiedź"} className="pl-10" /> : null}
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
-      )}
+      </div>
 
-      <CardFooter className="w-full mt-0 sm:mt-1 items-center justify-center sticky bottom-0">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSubmit(e);
-          }}
-          className="flex flex-col space-y-2 w-full max-w-3xl"
-        >
-          <div className="relative flex-1">
-            <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                isLoading
-                  ? "Odpowiadam! Nie przerwaj mi proszę..."
-                  : messages.some((message) => (message.artifacts?.length ?? 0) > 0)
-                  ? "Dopytaj o coś w tej sprawie"
-                  : "Zapytaj mnie o kwestię prawną"
-              }
-              disabled={isLoading || isPdfParsing}
-              className="pr-24 pl-4 py-3 resize-none min-h-[56px] max-h-[200px] w-full rounded-2xl border-2 focus:ring-2 focus:ring-primary/50 transition-all overflow-y-auto scrollbar-hide hover:scrollbar-default"
-              rows={1}
-              maxLength={800}
-            />
-            <div className="absolute bottom-2 right-2 flex items-center space-x-1">
-              <div className="relative">
-                {/* <Button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || isPdfParsing}
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 rounded-full hover:bg-muted transition-colors"
-                >
-                  {isPdfParsing ? (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                  ) : (
-                    <FileText className="h-5 w-5" />
-                  )}
-                </Button> */}
-                <input
-                  type="file"
-                  accept=".pdf"
-                  onChange={handlePdfFileChange}
-                  ref={fileInputRef}
-                  className="hidden"
-                />
-              </div>
-      
-              {isLoading ? (
-                <Button
-                  type="button"
-                  onClick={stopGenerating}
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 rounded-full hover:bg-red-100 transition-colors"
-                >
-                  <StopCircle className="h-5 w-5 text-red-500" />
-                </Button>
-              ) : (
-                <Button
-                  type="submit"
-                  disabled={isLoading || isPdfParsing}
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 rounded-full hover:bg-primary/10 text-primary transition-colors"
-                >
-                  <Send className="h-5 w-5" />
-                </Button>
-              )}
+      <div className="border-t bg-background/95 px-3 py-3 backdrop-blur sm:px-5 sm:py-4">
+        <div className="mx-auto w-full max-w-3xl">
+          {errorMessage ? (
+            <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p className="min-w-0 flex-1">{errorMessage}</p>
+              <Button type="button" variant="ghost" size="icon" onClick={clearError} className="-mr-2 -mt-1 h-8 w-8 text-destructive" aria-label="Zamknij komunikat błędu"><X className="h-4 w-4" /></Button>
             </div>
-          </div>
-        </form>
-      
-      </CardFooter>
-    </Card>
+          ) : null}
+          {messages.length >= 2 && !isLoading ? <Button type="button" variant="ghost" onClick={clearMessages} className="mb-2 h-8 px-2 text-xs text-muted-foreground">Rozpocznij nową rozmowę</Button> : null}
+          <ChatComposer value={input} onValueChange={setInput} onSend={send} onStop={stopGenerating} isGenerating={isLoading} disabled={isPdfParsing} placeholder="Opisz swoją sprawę prawną…" maxLength={800} footer="Enter — wyślij · Shift+Enter — nowa linia" />
+        </div>
+      </div>
+    </section>
   );
 }

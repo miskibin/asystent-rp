@@ -31,12 +31,14 @@ export const useChatLogic = () => {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleError = (error: unknown) => {
     if (error instanceof Error && error.name === "AbortError") return;
 
-    const errorMessage =
+    const message =
       error instanceof Error ? error.message : "An unknown error occurred";
+    setErrorMessage("Nie udało się uzyskać odpowiedzi. Spróbuj ponownie za chwilę.");
     const errorSource =
       error instanceof Error && error.stack
         ? error.stack.split("\n")[1]?.trim() || "Unknown location"
@@ -44,7 +46,7 @@ export const useChatLogic = () => {
 
     toast({
       title: "Błąd podczas odpowiadania",
-      description: `Location: ${errorSource}\nError: ${errorMessage}`,
+      description: `Location: ${errorSource}\nError: ${message}`,
       variant: "destructive",
       duration: 5000,
     });
@@ -110,6 +112,7 @@ export const useChatLogic = () => {
     e.preventDefault();
     const inputText = text || input;
     if (!inputText.trim()) return;
+    setErrorMessage(null);
 
     // Set loading state immediately
     setIsLoading(true);
@@ -264,6 +267,8 @@ export const useChatLogic = () => {
   return {
     isLoading,
     status,
+    errorMessage,
+    clearError: () => setErrorMessage(null),
     editMessage,
     customSystem: systemPrompt,
     setCustomSystem: setSystemPrompt,

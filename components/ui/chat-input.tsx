@@ -1275,7 +1275,7 @@ export function ChatInput({
                page. So dark mode gets a rim of the foreground instead — the
                same lift, built from the light in the theme rather than from
                its absence. */
-            "relative rounded-2xl border bg-background px-3 py-1.5 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5",
+            "relative rounded-2xl border bg-background px-3 py-1.5 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5 sm:pt-2.5 sm:pb-2",
             dragOver && "border-primary ring-1 ring-primary/20"
           )}
           onDragOver={(e) => {
@@ -1409,7 +1409,7 @@ export function ChatInput({
             }
             disabled={inputLocked}
             /* text-base on mobile keeps iOS from zooming the viewport on focus. */
-            className="min-h-7 w-full resize-none border-0 bg-transparent py-0 pr-16 text-base leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60 sm:text-[15px]"
+            className="min-h-7 w-full resize-none border-0 bg-transparent py-0 pr-16 text-base leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60 sm:min-h-6 sm:py-1.5 sm:pr-0 sm:text-[15px] sm:leading-relaxed"
           />
 
           <input
@@ -1425,7 +1425,7 @@ export function ChatInput({
 
           <div
             data-slot="chat-input-actions"
-            className="absolute right-2.5 bottom-1.5 flex shrink-0 items-center gap-1"
+            className="absolute right-2.5 bottom-1.5 flex shrink-0 items-center gap-1 sm:static sm:mt-1 sm:justify-end"
           >
             {isGenerating ? (
               <button

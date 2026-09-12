@@ -123,3 +123,14 @@ body {
 .animate-scale-check {
   animation: scale-check 0.3s ease-out;
 }
+
+@media (max-width: 639px) {
+  [data-slot="chat-input-textarea"] {
+    height: 1.75rem !important;
+    min-height: 1.75rem !important;
+    max-height: 1.75rem !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    white-space: nowrap;
+  }
+}

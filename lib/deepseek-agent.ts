@@ -20,9 +20,18 @@ import {
 import type { Message } from "./types";
 import { SEJM_DATA_TOOLS, SEJM_DATA_TOOL_NAMES } from "./tygodnik/tools";
 
-export const DEEPSEEK_MODEL = "deepseek-flash";
+export const DEEPSEEK_MODEL = "deepseek-v4-flash";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 export const AGENT_RECURSION_LIMIT = 16;
+export const AGENT_TOOL_CALL_LIMIT = 4;
+export const AGENT_MODEL_CALL_LIMIT = 5;
+export const AGENT_SYSTEM_PROMPT = [
+  "Odpowiadaj po polsku, jasno i konkretnie.",
+  "Gdy pytanie dotyczy Sejmu, polityków, ustaw, głosowań lub wypowiedzi, najpierw użyj właściwego narzędzia.",
+  "Opieraj fakty wyłącznie na zwróconych danych, podawaj istotne liczby i daty, a źródła cytuj tylko jako dokładne adresy URL z wyniku narzędzia.",
+  "Jeśli danych brakuje, powiedz czego nie udało się potwierdzić.",
+  "Nie pokazuj technicznych rankingów ani metadanych retrievalu.",
+].join(" ");
 export const DISABLED_DEEP_AGENT_TOOLS = [
   "ls",
   "read_file",
@@ -38,7 +47,7 @@ export const DISABLED_DEEP_AGENT_TOOLS = [
 
 export const MINIMAL_AGENT_CONFIG = {
   tools: SEJM_DATA_TOOLS,
-  systemPrompt: "",
+  systemPrompt: AGENT_SYSTEM_PROMPT,
   subagents: [],
   memory: [],
   skills: [],
@@ -91,7 +100,7 @@ export function createDeepSeekModel() {
     apiKey,
     model: DEEPSEEK_MODEL,
     streaming: true,
-    maxTokens: 1024,
+    maxTokens: 1_800,
     configuration: { baseURL: DEEPSEEK_BASE_URL },
     modelKwargs: {
       thinking: { type: "disabled" },
@@ -107,8 +116,8 @@ export function createMinimalDeepAgent() {
     ...MINIMAL_AGENT_CONFIG,
     middleware: [
       approvedToolBoundaryMiddleware,
-      toolCallLimitMiddleware({ runLimit: 2, exitBehavior: "continue" }),
-      modelCallLimitMiddleware({ runLimit: 3, exitBehavior: "end" }),
+      toolCallLimitMiddleware({ runLimit: AGENT_TOOL_CALL_LIMIT, exitBehavior: "continue" }),
+      modelCallLimitMiddleware({ runLimit: AGENT_MODEL_CALL_LIMIT, exitBehavior: "end" }),
     ],
   });
 }

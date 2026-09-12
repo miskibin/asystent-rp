@@ -92,8 +92,10 @@ export type ChatInputProps = {
   onStop?: () => void
   isGenerating?: boolean
   placeholder?: string
-  /** Rendered next to the attach button — model/mode pickers belong here. */
+  /** Optional controls rendered in a compact row above the draft. */
   tools?: React.ReactNode
+  /** Show the file picker control in the optional controls row. */
+  allowAttachments?: boolean
   /**
    * Fires on every change to the draft, the clear after a send and the text a
    * slash command inserts included. The composer keeps owning the value; this
@@ -435,6 +437,7 @@ export function ChatInput({
   isGenerating = false,
   placeholder,
   tools,
+  allowAttachments = false,
   onTextChange,
   skills = EMPTY_SKILLS,
   slashCommands = EMPTY_COMMANDS,
@@ -1158,6 +1161,7 @@ export function ChatInput({
     pastes.length > 0
   const resolvedPlaceholder =
     placeholder ?? (queueing ? "Queue a message… (Enter)" : "Ask anything")
+  const hasTools = Boolean(tools) || allowAttachments
 
   return (
     <div
@@ -1271,7 +1275,7 @@ export function ChatInput({
                page. So dark mode gets a rim of the foreground instead — the
                same lift, built from the light in the theme rather than from
                its absence. */
-            "rounded-2xl border bg-background px-3 pt-2.5 pb-2 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5",
+            "relative rounded-2xl border bg-background px-3 py-1.5 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5",
             dragOver && "border-primary ring-1 ring-primary/20"
           )}
           onDragOver={(e) => {
@@ -1344,6 +1348,27 @@ export function ChatInput({
             </div>
           ) : null}
 
+          {hasTools ? (
+            <div
+              data-slot="chat-input-toolbar"
+              className="mb-1 flex min-w-0 items-center gap-0.5"
+            >
+              {allowAttachments ? (
+                <button
+                  type="button"
+                  title="Attach file"
+                  aria-label="Attach file"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={inputLocked}
+                  className={cn(chatInputButtonVariants(), "px-1.5")}
+                >
+                  <Paperclip />
+                </button>
+              ) : null}
+              {tools}
+            </div>
+          ) : null}
+
           <textarea
             ref={taRef}
             data-slot="chat-input-textarea"
@@ -1384,7 +1409,7 @@ export function ChatInput({
             }
             disabled={inputLocked}
             /* text-base on mobile keeps iOS from zooming the viewport on focus. */
-            className="min-h-6 w-full resize-none border-0 bg-transparent py-1.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60 sm:text-[15px]"
+            className="min-h-7 w-full resize-none border-0 bg-transparent py-0 pr-16 text-base leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60 sm:text-[15px]"
           />
 
           <input
@@ -1399,58 +1424,43 @@ export function ChatInput({
           />
 
           <div
-            data-slot="chat-input-toolbar"
-            className="mt-1 flex items-end justify-between gap-2"
+            data-slot="chat-input-actions"
+            className="absolute right-2.5 bottom-1.5 flex shrink-0 items-center gap-1"
           >
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
+            {isGenerating ? (
               <button
                 type="button"
-                title="Attach file"
-                aria-label="Attach file"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={inputLocked}
-                className={cn(chatInputButtonVariants(), "px-1.5")}
+                data-slot="chat-input-stop"
+                onClick={onStop}
+                title="Stop generating"
+                className={cn(
+                  chatInputButtonVariants({
+                    /* Queueing keeps both actions on screen — only one of
+                       them can be the primary one. */
+                    variant: queueing ? "ghost" : "primary",
+                  }),
+                  queueing && "border"
+                )}
               >
-                <Paperclip />
+                <Square className="size-2.5 fill-current" />
+                <span className="text-[11px]">stop</span>
               </button>
-              {tools}
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {isGenerating ? (
-                <button
-                  type="button"
-                  data-slot="chat-input-stop"
-                  onClick={onStop}
-                  title="Stop generating"
-                  className={cn(
-                    chatInputButtonVariants({
-                      /* Queueing keeps both actions on screen — only one of
-                         them can be the primary one. */
-                      variant: queueing ? "ghost" : "primary",
-                    }),
-                    queueing && "border"
-                  )}
-                >
-                  <Square className="size-2.5 fill-current" />
-                  <span className="text-[11px]">stop</span>
-                </button>
-              ) : null}
-              {isGenerating && !queueing ? null : (
-                <button
-                  type="button"
-                  data-slot="chat-input-send"
-                  onClick={submit}
-                  disabled={!canSend}
-                  title={queueing ? "Queue (Enter)" : "Send (Enter)"}
-                  className={cn(chatInputButtonVariants({ variant: "primary" }))}
-                >
-                  <span className="hidden text-[13px] leading-none sm:inline">↵</span>
-                  <span className="text-[11px]">
-                    {queueing ? "queue" : "send"}
-                  </span>
-                </button>
-              )}
-            </div>
+            ) : null}
+            {isGenerating && !queueing ? null : (
+              <button
+                type="button"
+                data-slot="chat-input-send"
+                onClick={submit}
+                disabled={!canSend}
+                title={queueing ? "Queue (Enter)" : "Send (Enter)"}
+                className={cn(chatInputButtonVariants({ variant: "primary" }))}
+              >
+                <span className="hidden text-[13px] leading-none sm:inline">↵</span>
+                <span className="text-[11px]">
+                  {queueing ? "queue" : "send"}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>

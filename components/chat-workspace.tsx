@@ -240,7 +240,7 @@ export function ChatWorkspace() {
           type="button"
           aria-label="Otwórz rozmowy"
           onClick={() => setMobileOpen(true)}
-          className="fixed top-3 left-3 z-30 inline-grid size-8 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 md:hidden [&_svg]:size-4"
+          className="fixed top-3 left-3 z-30 inline-grid size-8 place-items-center rounded-md border border-border/60 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 md:hidden [&_svg]:size-4"
         >
           <PanelLeft />
         </button>
@@ -307,11 +307,6 @@ export function ChatWorkspace() {
               onStop={stopGenerating}
               onSend={send}
               history={history}
-              tools={
-                <span className="hidden text-[12px] text-muted-foreground sm:inline">
-                  DeepSeek 4.1 Flash
-                </span>
-              }
             />
             {isEmpty ? (
               <PromptSuggestions

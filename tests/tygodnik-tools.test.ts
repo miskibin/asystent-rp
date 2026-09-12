@@ -3,7 +3,9 @@ import { AIMessageChunk, ToolMessage } from "@langchain/core/messages";
 
 import {
   boundedJson,
+  buildSearchQueries,
   formatLatestEvent,
+  parsePrintKey,
   SEJM_DATA_TOOLS,
   SEJM_DATA_TOOL_NAMES,
 } from "../lib/tygodnik/tools";
@@ -20,12 +22,25 @@ describe("Tygodnik tools", () => {
   });
 
   it("caps search and latest result counts in their schemas", () => {
-    expect(SEJM_DATA_TOOLS[0].schema.safeParse({ query: "budżet", limit: 7 }).success).toBe(false);
-    expect(SEJM_DATA_TOOLS[0].schema.safeParse({ query: "budżet", limit: 6 }).success).toBe(true);
-    expect(SEJM_DATA_TOOLS[2].schema.safeParse({ limit: 6 }).success).toBe(false);
-    expect(SEJM_DATA_TOOLS[2].schema.safeParse({ limit: 5 }).success).toBe(true);
+    expect(SEJM_DATA_TOOLS[0].schema.safeParse({ query: "budżet", limit: 9 }).success).toBe(false);
+    expect(SEJM_DATA_TOOLS[0].schema.safeParse({ query: "budżet", limit: 8 }).success).toBe(true);
+    expect(SEJM_DATA_TOOLS[2].schema.safeParse({ limit: 11 }).success).toBe(false);
+    expect(SEJM_DATA_TOOLS[2].schema.safeParse({ limit: 10 }).success).toBe(true);
   });
 
+  it("turns a natural-language question into bounded Polish search fallbacks", () => {
+    expect(buildSearchQueries("Jakie ustawy dotyczą ochrony zdrowia?")).toEqual([
+      "ustawy dotyczą ochrony zdrowia",
+      "ustawy",
+      "dotyczą",
+      "ochrony",
+    ]);
+  });
+
+  it("supports current and legacy print identifiers from production search", () => {
+    expect(parsePrintKey("10:719")).toEqual({ term: 10, number: "719" });
+    expect(parsePrintKey("719")).toEqual({ term: null, number: "719" });
+  });
   it("always returns valid JSON within the token-saving output cap", () => {
     const output = boundedJson({ body: "x".repeat(10_000) }, 300);
     expect(output.length).toBeLessThanOrEqual(300);

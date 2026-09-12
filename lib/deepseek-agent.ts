@@ -15,6 +15,7 @@ import { TYGODNIK_TOOLS, TYGODNIK_TOOL_NAMES } from "./tygodnik/tools";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const AGENT_RECURSION_LIMIT = 16;
 export const DISABLED_DEEP_AGENT_TOOLS = [
   "ls",
   "read_file",
@@ -131,7 +132,7 @@ export async function* streamDeepSeek(messages: Message[], signal?: AbortSignal)
   const agent = createMinimalDeepAgent();
   const stream = await agent.stream(
     { messages: toLangChainMessages(messages) },
-    { streamMode: "messages", recursionLimit: 8, signal }
+    { streamMode: "messages", recursionLimit: AGENT_RECURSION_LIMIT, signal }
   );
 
   for await (const item of stream) {

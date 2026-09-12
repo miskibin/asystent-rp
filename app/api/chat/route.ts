@@ -91,10 +91,18 @@ export async function POST(request: NextRequest) {
       let connected = true;
       let assistantContent = "";
       let prepared: Awaited<ReturnType<typeof prepareChatRun>> | null = null;
+      let assistantPersistAttempted = false;
       let sequence = 0;
       const push = (event: unknown, eventId: string) => {
         if (!connected) return;
         try { controller.enqueue(encoder.encode(sse(event, eventId))); } catch { connected = false; }
+      };
+      const persistAssistant = async () => {
+        if (!prepared || !assistantContent.trim() || assistantPersistAttempted) return null;
+        assistantPersistAttempted = true;
+        const { data: assistant, error } = await supabase.from("chat_messages").insert({ thread_id: prepared.thread.id, user_id: data.user.id, role: "assistant", content: assistantContent }).select("id").single();
+        if (error) throw error;
+        return assistant.id as string;
       };
 
       try {
@@ -106,12 +114,23 @@ export async function POST(request: NextRequest) {
           push({ type: "response", threadId: prepared.thread.id, messages: [{ role: "assistant", content }] }, `${prepared.thread.id}:response:${sequence++}`);
         }
 
-        if (assistantContent.trim()) {
-          const { data: assistant, error } = await supabase.from("chat_messages").insert({ thread_id: prepared.thread.id, user_id: data.user.id, role: "assistant", content: assistantContent }).select("id").single();
-          if (error) throw error;
-          push({ type: "done", threadId: prepared.thread.id, assistantMessageId: assistant.id }, `${prepared.thread.id}:done`);
+        const assistantMessageId = await persistAssistant();
+        if (assistantMessageId) {
+          push({ type: "done", threadId: prepared.thread.id, assistantMessageId }, `${prepared.thread.id}:done`);
         }
       } catch (error) {
+        if (assistantContent.trim() && !assistantPersistAttempted) {
+          try {
+            const assistantMessageId = await persistAssistant();
+            if (assistantMessageId && prepared) {
+              console.warn("Agent stopped after returning a partial response", error);
+              push({ type: "done", threadId: prepared.thread.id, assistantMessageId }, `${prepared.thread.id}:done`);
+              return;
+            }
+          } catch (persistError) {
+            console.error("Partial assistant response was not persisted", persistError);
+          }
+        }
         if (!(error instanceof Error && error.name === "AbortError")) {
           console.error("DeepSeek chat failed", error);
           push({ type: "error", threadId: prepared?.thread.id, messages: [{ role: "assistant", content: "Nie udało się uzyskać odpowiedzi." }] }, `${prepared?.thread.id ?? "chat"}:error`);

@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Message } from "./types";
 
+type StoredProcess = Pick<Message, "parts" | "tools" | "workedFor">;
+
 export type ChatThread = {
   id: string;
   title: string;
@@ -30,10 +32,20 @@ export async function listChatThreads(client: SupabaseClient): Promise<ChatThrea
   }));
 }
 
+function storedProcess(value: unknown): StoredProcess {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const process = value as StoredProcess;
+  return {
+    parts: Array.isArray(process.parts) ? process.parts : undefined,
+    tools: Array.isArray(process.tools) ? process.tools : undefined,
+    workedFor: typeof process.workedFor === "number" ? process.workedFor : undefined,
+  };
+}
+
 export async function loadChatMessages(client: SupabaseClient, threadId: string): Promise<Message[]> {
   const { data, error } = await client
     .from("chat_messages")
-    .select("id,role,content,message_order")
+    .select("id,role,content,message_order,process")
     .eq("thread_id", threadId)
     .order("message_order", { ascending: false })
     .limit(CHAT_MESSAGE_LIMIT);
@@ -42,6 +54,7 @@ export async function loadChatMessages(client: SupabaseClient, threadId: string)
     id: row.id as string,
     role: row.role as "user" | "assistant",
     content: row.content as string,
+    ...storedProcess(row.process),
   }));
 }
 

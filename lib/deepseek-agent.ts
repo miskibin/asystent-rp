@@ -1,4 +1,10 @@
-import { AIMessage, AIMessageChunk, HumanMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  AIMessageChunk,
+  HumanMessage,
+  ToolMessage,
+  ToolMessageChunk,
+} from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
 import {
   createMiddleware,
@@ -10,8 +16,9 @@ import {
   createHarnessProfile,
   registerHarnessProfile,
 } from "deepagents";
+
 import type { Message } from "./types";
-import { TYGODNIK_TOOLS, TYGODNIK_TOOL_NAMES } from "./tygodnik/tools";
+import { SEJM_DATA_TOOLS, SEJM_DATA_TOOL_NAMES } from "./tygodnik/tools";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -30,7 +37,7 @@ export const DISABLED_DEEP_AGENT_TOOLS = [
 ] as const;
 
 export const MINIMAL_AGENT_CONFIG = {
-  tools: TYGODNIK_TOOLS,
+  tools: SEJM_DATA_TOOLS,
   systemPrompt: "",
   subagents: [],
   memory: [],
@@ -39,11 +46,14 @@ export const MINIMAL_AGENT_CONFIG = {
   reasoning_effort: "none" as const,
 };
 
-const approvedToolNames = new Set<string>(TYGODNIK_TOOL_NAMES);
+export type AgentStreamEvent =
+  | { type: "text"; content: string }
+  | { type: "tool_start"; id: string; name: string; input: string }
+  | { type: "tool_update"; id: string; name: string; input: string }
+  | { type: "tool_end"; id: string; name: string; output: string; status: "done" | "error" };
 
-// Deep Agents installs filesystem/task middleware internally. This boundary
-// guarantees that the model receives only the three read-only data tools even
-// if a future harness profile or provider match changes.
+const approvedToolNames = new Set<string>(SEJM_DATA_TOOL_NAMES);
+
 export const approvedToolBoundaryMiddleware = createMiddleware({
   name: "ApprovedToolBoundary",
   wrapModelCall: (request, handler) =>
@@ -83,8 +93,6 @@ export function createDeepSeekModel() {
     streaming: true,
     maxTokens: 1024,
     configuration: { baseURL: DEEPSEEK_BASE_URL },
-    // DeepSeek's OpenAI-compatible endpoint accepts these controls directly.
-    // Keeping both guards makes the non-thinking invariant explicit.
     modelKwargs: {
       thinking: { type: "disabled" },
       reasoning_effort: "none",
@@ -128,6 +136,85 @@ function contentToText(content: unknown): string {
     .join("");
 }
 
+type ToolState = {
+  id: string;
+  name: string;
+  input: string;
+  started: boolean;
+};
+
+export async function* streamAgentEvents(items: AsyncIterable<unknown>): AsyncGenerator<AgentStreamEvent> {
+  const callsByIndex = new Map<number, ToolState>();
+  const callsById = new Map<string, ToolState>();
+  let anonymousCall = 0;
+
+  for await (const item of items) {
+    const chunk = Array.isArray(item) ? item[0] : item;
+
+    if (AIMessageChunk.isInstance(chunk)) {
+      const text = contentToText(chunk.content);
+      if (text) yield { type: "text", content: text };
+
+      for (const toolChunk of chunk.tool_call_chunks ?? []) {
+        const index = toolChunk.index ?? 0;
+        let state = callsByIndex.get(index);
+        if (!state) {
+          state = {
+            id: toolChunk.id || `tool-${index}-${++anonymousCall}`,
+            name: toolChunk.name || "tool",
+            input: "",
+            started: false,
+          };
+          callsByIndex.set(index, state);
+        }
+        if (toolChunk.id && state.id.startsWith("tool-")) state.id = toolChunk.id;
+        if (toolChunk.name) state.name = toolChunk.name;
+        if (toolChunk.args) state.input += toolChunk.args;
+        callsById.set(state.id, state);
+
+        if (!state.started && state.name !== "tool") {
+          state.started = true;
+          yield { type: "tool_start", id: state.id, name: state.name, input: state.input };
+        } else if (state.started && toolChunk.args) {
+          yield { type: "tool_update", id: state.id, name: state.name, input: state.input };
+        }
+      }
+      continue;
+    }
+
+    if (AIMessage.isInstance(chunk)) {
+      const text = contentToText(chunk.content);
+      if (text) yield { type: "text", content: text };
+      for (const call of chunk.tool_calls ?? []) {
+        const id = call.id || `tool-final-${++anonymousCall}`;
+        if (callsById.has(id)) continue;
+        const state: ToolState = {
+          id,
+          name: call.name,
+          input: JSON.stringify(call.args ?? {}),
+          started: true,
+        };
+        callsById.set(id, state);
+        yield { type: "tool_start", id, name: state.name, input: state.input };
+      }
+      continue;
+    }
+
+    if (ToolMessage.isInstance(chunk) || ToolMessageChunk.isInstance(chunk)) {
+      const id = chunk.tool_call_id;
+      const state = callsById.get(id);
+      const name = chunk.name || state?.name || "tool";
+      yield {
+        type: "tool_end",
+        id,
+        name,
+        output: contentToText(chunk.content),
+        status: chunk.status === "error" ? "error" : "done",
+      };
+    }
+  }
+}
+
 export async function* streamDeepSeek(messages: Message[], signal?: AbortSignal) {
   const agent = createMinimalDeepAgent();
   const stream = await agent.stream(
@@ -135,10 +222,5 @@ export async function* streamDeepSeek(messages: Message[], signal?: AbortSignal)
     { streamMode: "messages", recursionLimit: AGENT_RECURSION_LIMIT, signal }
   );
 
-  for await (const item of stream) {
-    const chunk = Array.isArray(item) ? item[0] : item;
-    if (!AIMessageChunk.isInstance(chunk) && !AIMessage.isInstance(chunk)) continue;
-    const text = contentToText((chunk as { content?: unknown })?.content);
-    if (text) yield text;
-  }
+  yield* streamAgentEvents(stream as AsyncIterable<unknown>);
 }

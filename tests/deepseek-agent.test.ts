@@ -9,7 +9,7 @@ import {
   MINIMAL_AGENT_CONFIG,
   toLangChainMessages,
 } from "../lib/deepseek-agent";
-import { TYGODNIK_TOOL_NAMES } from "../lib/tygodnik/tools";
+import { SEJM_DATA_TOOL_NAMES } from "../lib/tygodnik/tools";
 
 beforeEach(() => {
   process.env.DEEPSEEK_API_KEY = "test-key";
@@ -34,9 +34,9 @@ describe("minimal DeepSeek agent invariants", () => {
   it("configures only the three bounded Tygodnik tools", () => {
     expect(MINIMAL_AGENT_CONFIG.systemPrompt).toBe("");
     expect(MINIMAL_AGENT_CONFIG.tools.map((entry) => entry.name)).toEqual([
-      "search_tygodnik",
-      "get_tygodnik_item",
-      "get_latest_tygodnik",
+      "search_sejm_data",
+      "get_sejm_record",
+      "get_latest_sejm_sitting",
     ]);
     expect(MINIMAL_AGENT_CONFIG.subagents).toHaveLength(0);
     expect(MINIMAL_AGENT_CONFIG.memory).toHaveLength(0);
@@ -59,7 +59,7 @@ describe("minimal DeepSeek agent invariants", () => {
 
   it("constructs Deep Agents with exactly the approved custom tools", () => {
     const agent = createMinimalDeepAgent();
-    expect(agent.options.tools?.map((entry) => entry.name)).toEqual(TYGODNIK_TOOL_NAMES);
+    expect(agent.options.tools?.map((entry) => entry.name)).toEqual(SEJM_DATA_TOOL_NAMES);
   });
 
   it("filters model-visible tools through a hard allowlist", async () => {
@@ -67,9 +67,9 @@ describe("minimal DeepSeek agent invariants", () => {
     const request = {
       tools: [
         { name: "delete" },
-        { name: "search_tygodnik" },
+        { name: "search_sejm_data" },
         { name: "execute" },
-        { name: "get_latest_tygodnik" },
+        { name: "get_latest_sejm_sitting" },
       ],
     };
 
@@ -81,7 +81,7 @@ describe("minimal DeepSeek agent invariants", () => {
       }) as never
     );
 
-    expect(seen).toEqual(["search_tygodnik", "get_latest_tygodnik"]);
+    expect(seen).toEqual(["search_sejm_data", "get_latest_sejm_sitting"]);
   });
 
   it("converts only user and assistant messages", () => {

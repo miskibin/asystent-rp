@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
+  AGENT_RECURSION_LIMIT,
   approvedToolBoundaryMiddleware,
   createDeepSeekModel,
   createMinimalDeepAgent,
@@ -15,6 +16,10 @@ beforeEach(() => {
 });
 
 describe("minimal DeepSeek agent invariants", () => {
+  it("leaves enough graph steps for the hard model and tool limits to finish", () => {
+    expect(AGENT_RECURSION_LIMIT).toBe(16);
+  });
+
   it("exposes exactly one model configuration with thinking disabled", () => {
     const model = createDeepSeekModel();
 

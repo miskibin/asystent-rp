@@ -7,6 +7,12 @@ const SITE_URL = "https://tygodniksejmowy.pl";
 const kinds = ["print", "promise", "statement", "voting", "committee", "mp"] as const;
 type TygodnikKind = (typeof kinds)[number];
 type JsonRecord = Record<string, unknown>;
+const SEARCH_STOP_WORDS = new Set([
+  "aby", "albo", "bardzo", "byl", "byla", "bylo", "byly", "czy", "dla",
+  "jak", "jaka", "jaki", "jakie", "jest", "ktory", "ktora", "ktore", "ma",
+  "mam", "mnie", "nad", "nie", "oraz", "pod", "sie", "ten", "tej", "tym",
+  "w", "we", "z", "za", "ze", "zostal", "zostala", "zostalo",
+]);
 
 type SearchRow = {
   kind: TygodnikKind;
@@ -43,7 +49,7 @@ function compact(value: unknown, depth = 0): unknown {
   if (value == null || typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "string") return cleanText(value);
   if (depth >= 3) return undefined;
-  if (Array.isArray(value)) return value.slice(0, 8).map((entry) => compact(entry, depth + 1));
+  if (Array.isArray(value)) return value.slice(0, 10).map((entry) => compact(entry, depth + 1));
   if (typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
@@ -54,7 +60,7 @@ function compact(value: unknown, depth = 0): unknown {
   return undefined;
 }
 
-export function boundedJson(value: unknown, max = 2_500): string {
+export function boundedJson(value: unknown, max = 7_500): string {
   const text = JSON.stringify(compact(value));
   if (text.length <= max) return text;
   let preview = text;
@@ -62,6 +68,23 @@ export function boundedJson(value: unknown, max = 2_500): string {
     preview = preview.slice(0, -64);
   }
   return JSON.stringify({ truncated: true, preview });
+}
+
+function normalizedSearchTerm(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pl-PL");
+}
+
+export function buildSearchQueries(query: string): string[] {
+  const original = query.replace(/\s+/g, " ").trim();
+  const focused = (original.match(/[\p{L}\p{N}-]{2,}/gu) ?? [])
+    .filter((term) => !SEARCH_STOP_WORDS.has(normalizedSearchTerm(term)))
+    .slice(0, 6);
+  const queries = [focused.join(" ") || original];
+  if (focused.length > 1) queries.push(...focused.slice(0, 3));
+  return [...new Set(queries.filter((value) => value.length >= 2))];
 }
 
 function unavailable(error: unknown): string {
@@ -84,7 +107,10 @@ function trustedExternalUrl(value: unknown): string | null {
   }
 }
 
-function printKey(entityId: string): { term: number; number: string } | null {
+export function parsePrintKey(entityId: string): { term: number | null; number: string } | null {
+  if (!entityId.includes(":")) {
+    return entityId ? { term: null, number: entityId } : null;
+  }
   const [rawTerm, ...numberParts] = entityId.split(":");
   const term = Number(rawTerm);
   const number = numberParts.join(":");
@@ -200,47 +226,146 @@ async function hydrateSearchRow(row: SearchRow) {
   const snippet = cleanText(row.headline, 240);
 
   if (row.kind === "print") {
-    const key = printKey(row.entity_id);
+    const key = parsePrintKey(row.entity_id);
     if (!key) return null;
-    const { data } = await db.from("prints").select("term,number,title,short_title").eq("term", key.term).eq("number", key.number).maybeSingle();
+    let query = db
+      .from("prints")
+      .select("term,number,title,short_title,delivery_date,summary_plain,impact_punch,topic,stance,sponsor_authority,citizen_action")
+      .eq("number", key.number);
+    if (key.term != null) query = query.eq("term", key.term);
+    const { data } = await query.order("term", { ascending: false }).limit(1).maybeSingle();
     if (!data) return null;
-    return { kind: row.kind, id: row.entity_id, title: data.short_title || data.title, snippet, context: `Druk ${data.number}, kadencja ${data.term}`, url: appUrl(`/proces/${data.term}/${encodeURIComponent(data.number)}`) };
+    return {
+      kind: row.kind,
+      id: row.entity_id,
+      title: data.short_title || data.title,
+      excerpt: cleanText(data.summary_plain, 700) ?? cleanText(data.impact_punch, 500) ?? snippet,
+      context: [`Druk ${data.number}, kadencja ${data.term}`, data.delivery_date, data.sponsor_authority]
+        .filter(Boolean)
+        .join(" · "),
+      topic: cleanText(data.topic, 180),
+      stance: cleanText(data.stance, 180),
+      citizenAction: cleanText(data.citizen_action, 260),
+      url: appUrl(`/proces/${data.term}/${encodeURIComponent(data.number)}`),
+    };
   }
 
   if (!Number.isFinite(id)) return null;
   if (row.kind === "promise") {
-    const { data } = await db.from("promises").select("id,title,party_code,source_year,source_url").eq("id", id).maybeSingle();
-    return data ? { kind: row.kind, id: row.entity_id, title: data.title, snippet, context: [data.party_code, data.source_year].filter(Boolean).join(" · "), url: trustedExternalUrl(data.source_url) } : null;
+    const { data } = await db
+      .from("promises")
+      .select("id,title,party_code,source_year,source_url,source_quote,normalized_text,status")
+      .eq("id", id)
+      .maybeSingle();
+    return data ? {
+      kind: row.kind,
+      id: row.entity_id,
+      title: data.title,
+      excerpt: cleanText(data.source_quote, 700) ?? cleanText(data.normalized_text, 700) ?? snippet,
+      context: [data.party_code, data.source_year, data.status].filter(Boolean).join(" · "),
+      url: trustedExternalUrl(data.source_url),
+    } : null;
   }
   if (row.kind === "statement") {
-    const { data } = await db.from("proceeding_statements").select("id,speaker_name,function,start_datetime").eq("id", id).maybeSingle();
-    return data ? { kind: row.kind, id: row.entity_id, title: data.speaker_name, snippet, context: [data.function, data.start_datetime].filter(Boolean).join(" · "), url: appUrl(`/mowa/${data.id}`) } : null;
+    const { data } = await db
+      .from("proceeding_statements")
+      .select("id,speaker_name,function,start_datetime,summary_one_line,body_text")
+      .eq("id", id)
+      .maybeSingle();
+    return data ? {
+      kind: row.kind,
+      id: row.entity_id,
+      title: data.speaker_name,
+      excerpt: cleanText(data.summary_one_line, 500) ?? snippet ?? cleanText(data.body_text, 700),
+      context: [data.function, data.start_datetime].filter(Boolean).join(" · "),
+      url: appUrl(`/mowa/${data.id}`),
+    } : null;
   }
   if (row.kind === "voting") {
-    const { data } = await db.from("votings").select("id,title,topic,date").eq("id", id).maybeSingle();
-    return data ? { kind: row.kind, id: row.entity_id, title: data.title || data.topic || "Głosowanie", snippet, context: data.date, url: appUrl(`/glosowanie/${data.id}`) } : null;
+    const { data } = await db
+      .from("votings")
+      .select("id,title,topic,description,date,yes,no,abstain,not_participating,total_voted,sitting")
+      .eq("id", id)
+      .maybeSingle();
+    return data ? {
+      kind: row.kind,
+      id: row.entity_id,
+      title: data.title || data.topic || "Głosowanie",
+      excerpt: cleanText(data.description, 500) ?? cleanText(data.topic, 500) ?? snippet,
+      context: [data.date, data.sitting ? `posiedzenie ${data.sitting}` : null]
+        .filter(Boolean)
+        .join(" · "),
+      result: {
+        yes: data.yes,
+        no: data.no,
+        abstain: data.abstain,
+        notParticipating: data.not_participating,
+        totalVoted: data.total_voted,
+      },
+      url: appUrl(`/glosowanie/${data.id}`),
+    } : null;
   }
   if (row.kind === "committee") {
-    const { data } = await db.from("committees").select("id,name,code,type").eq("id", id).maybeSingle();
-    return data ? { kind: row.kind, id: row.entity_id, title: data.name || data.code, snippet, context: [data.code, data.type].filter(Boolean).join(" · "), url: appUrl(`/komisja/${data.id}`) } : null;
+    const { data } = await db
+      .from("committees")
+      .select("id,name,code,type,scope")
+      .eq("id", id)
+      .maybeSingle();
+    return data ? {
+      kind: row.kind,
+      id: row.entity_id,
+      title: data.name || data.code,
+      excerpt: cleanText(data.scope, 700) ?? snippet,
+      context: [data.code, data.type].filter(Boolean).join(" · "),
+      url: appUrl(`/komisja/${data.id}`),
+    } : null;
   }
 
-  const { data } = await db.from("mps").select("id,mp_id,first_last_name,club_ref,district_num,active").eq("id", id).maybeSingle();
-  return data ? { kind: row.kind, id: row.entity_id, title: data.first_last_name, snippet, context: [data.club_ref, data.district_num ? `okręg ${data.district_num}` : null, data.active ? null : "były poseł"].filter(Boolean).join(" · "), url: appUrl(`/posel/${data.mp_id}`) } : null;
+  const { data } = await db
+    .from("mps")
+    .select("id,mp_id,first_last_name,club_ref,district_num,voivodeship,active,profession,education_level")
+    .eq("id", id)
+    .maybeSingle();
+  return data ? {
+    kind: row.kind,
+    id: row.entity_id,
+    title: data.first_last_name,
+    excerpt: snippet,
+    context: [
+      data.club_ref,
+      data.district_num ? `okręg ${data.district_num}` : null,
+      data.voivodeship,
+      data.active ? null : "były poseł",
+    ].filter(Boolean).join(" · "),
+    profession: cleanText(data.profession, 120),
+    education: cleanText(data.education_level, 120),
+    url: appUrl(`/posel/${data.mp_id}`),
+  } : null;
 }
-
 export const searchSejmDataTool = tool(
   async ({ query, scope, limit }) => {
     try {
       const db = createTygodnikClient();
-      const cappedLimit = Math.min(limit ?? 5, 6);
-      const { data, error } = await db.rpc("polish_fts_search", {
-        p_query: query.trim(),
-        p_scope: scope ?? "all",
-        p_limit: cappedLimit,
-      });
-      if (error) throw error;
-      const hydrated = await Promise.all(((data ?? []) as SearchRow[]).slice(0, cappedLimit).map(hydrateSearchRow));
+      const cappedLimit = Math.min(limit ?? 6, 8);
+      const rowsByKey = new Map<string, SearchRow>();
+      for (const searchQuery of buildSearchQueries(query)) {
+        const { data, error } = await db.rpc("polish_fts_search", {
+          p_query: searchQuery,
+          p_scope: scope ?? "all",
+          p_limit: cappedLimit * 2,
+        });
+        if (error) throw error;
+        for (const row of (data ?? []) as SearchRow[]) {
+          const key = `${row.kind}:${row.entity_id}`;
+          const previous = rowsByKey.get(key);
+          if (!previous || row.rank > previous.rank) rowsByKey.set(key, row);
+        }
+        if (rowsByKey.size >= cappedLimit) break;
+      }
+      const rows = [...rowsByKey.values()]
+        .sort((left, right) => right.rank - left.rank)
+        .slice(0, cappedLimit);
+      const hydrated = await Promise.all(rows.map(hydrateSearchRow));
       return boundedJson({ items: hydrated.filter(Boolean) });
     } catch (error) {
       return unavailable(error);
@@ -248,11 +373,11 @@ export const searchSejmDataTool = tool(
   },
   {
     name: "search_sejm_data",
-    description: "Search verified parliamentary data. Return at most six compact results. Cite only an exact URL returned by this tool; never construct or modify a URL.",
+    description: "Search verified Sejm records and return up to eight source excerpts with concrete facts and exact URLs. Use concise Polish keywords. Usually this result is detailed enough to answer without another lookup. Cite only an exact URL returned by this tool; never construct or modify a URL.",
     schema: z.object({
       query: z.string().trim().min(2).max(200),
       scope: z.enum(["all", ...kinds]).default("all"),
-      limit: z.number().int().min(1).max(6).default(5),
+      limit: z.number().int().min(1).max(8).default(6),
     }),
   }
 );
@@ -261,11 +386,13 @@ async function fetchItem(kind: TygodnikKind, entityId: string) {
   const db = createTygodnikClient();
   const id = Number(entityId);
   if (kind === "print") {
-    const key = printKey(entityId);
+    const key = parsePrintKey(entityId);
     if (!key) return null;
-    const { data, error } = await db.from("prints").select("term,number,title,short_title,delivery_date,summary_plain,impact_punch,topic,stance,sponsor_authority,citizen_action").eq("term", key.term).eq("number", key.number).maybeSingle();
+    let query = db.from("prints").select("term,number,title,short_title,delivery_date,summary_plain,impact_punch,topic,stance,sponsor_authority,citizen_action").eq("number", key.number);
+    if (key.term != null) query = query.eq("term", key.term);
+    const { data, error } = await query.order("term", { ascending: false }).limit(1).maybeSingle();
     if (error) throw error;
-    return data ? { ...data, url: appUrl(`/proces/${key.term}/${encodeURIComponent(key.number)}`) } : null;
+    return data ? { ...data, url: appUrl(`/proces/${data.term}/${encodeURIComponent(data.number)}`) } : null;
   }
   if (!Number.isFinite(id)) return null;
   if (kind === "promise") {
@@ -317,7 +444,7 @@ export const getLatestSejmSittingTool = tool(
   async ({ limit }) => {
     try {
       const db = createTygodnikClient();
-      const cappedLimit = Math.min(limit ?? 5, 5);
+      const cappedLimit = Math.min(limit ?? 8, 10);
       const { data: sitting, error: sittingError } = await db
         .from("tygodnik_sittings")
         .select("term,sitting_num,sitting_title,first_date,last_date,event_count")
@@ -357,8 +484,8 @@ export const getLatestSejmSittingTool = tool(
   },
   {
     name: "get_latest_sejm_sitting",
-    description: "Get complete user-facing facts from the latest completed Sejm sitting. Results are already ranked internally: never mention scores or ranking metadata. Usually answer directly from this result without another tool call. Cite only exact returned URLs.",
-    schema: z.object({ limit: z.number().int().min(1).max(5).default(5) }),
+    description: "Get complete user-facing facts from the latest completed Sejm sitting. Return up to ten events with dates, results and exact sources. Results are selected internally: never mention scores or ranking metadata. Usually answer directly from this result without another tool call. Cite only exact returned URLs.",
+    schema: z.object({ limit: z.number().int().min(1).max(10).default(8) }),
   }
 );
 

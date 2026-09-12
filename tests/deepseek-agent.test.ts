@@ -1,7 +1,9 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
+  AGENT_MODEL_CALL_LIMIT,
   AGENT_RECURSION_LIMIT,
+  AGENT_TOOL_CALL_LIMIT,
   approvedToolBoundaryMiddleware,
   createDeepSeekModel,
   createMinimalDeepAgent,
@@ -18,13 +20,15 @@ beforeEach(() => {
 describe("minimal DeepSeek agent invariants", () => {
   it("leaves enough graph steps for the hard model and tool limits to finish", () => {
     expect(AGENT_RECURSION_LIMIT).toBe(16);
+    expect(AGENT_TOOL_CALL_LIMIT).toBe(4);
+    expect(AGENT_MODEL_CALL_LIMIT).toBe(5);
   });
 
   it("exposes exactly one model configuration with thinking disabled", () => {
     const model = createDeepSeekModel();
 
-    expect(model.model).toBe("deepseek-flash");
-    expect(model.maxTokens).toBe(1024);
+    expect(model.model).toBe("deepseek-v4-flash");
+    expect(model.maxTokens).toBe(1_800);
     expect(model.modelKwargs).toMatchObject({
       thinking: { type: "disabled" },
       reasoning_effort: "none",
@@ -32,7 +36,7 @@ describe("minimal DeepSeek agent invariants", () => {
   });
 
   it("configures only the three bounded Tygodnik tools", () => {
-    expect(MINIMAL_AGENT_CONFIG.systemPrompt).toBe("");
+    expect(MINIMAL_AGENT_CONFIG.systemPrompt).toContain("Odpowiadaj po polsku");
     expect(MINIMAL_AGENT_CONFIG.tools.map((entry) => entry.name)).toEqual([
       "search_sejm_data",
       "get_sejm_record",

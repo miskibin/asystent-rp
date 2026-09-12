@@ -1,12 +1,14 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
+  approvedToolBoundaryMiddleware,
   createDeepSeekModel,
   createMinimalDeepAgent,
   DISABLED_DEEP_AGENT_TOOLS,
   MINIMAL_AGENT_CONFIG,
   toLangChainMessages,
 } from "../lib/deepseek-agent";
+import { TYGODNIK_TOOL_NAMES } from "../lib/tygodnik/tools";
 
 beforeEach(() => {
   process.env.DEEPSEEK_API_KEY = "test-key";
@@ -24,9 +26,13 @@ describe("minimal DeepSeek agent invariants", () => {
     });
   });
 
-  it("does not configure system prompts, tools, memory, or subagents", () => {
+  it("configures only the three bounded Tygodnik tools", () => {
     expect(MINIMAL_AGENT_CONFIG.systemPrompt).toBe("");
-    expect(MINIMAL_AGENT_CONFIG.tools).toHaveLength(0);
+    expect(MINIMAL_AGENT_CONFIG.tools.map((entry) => entry.name)).toEqual([
+      "search_tygodnik",
+      "get_tygodnik_item",
+      "get_latest_tygodnik",
+    ]);
     expect(MINIMAL_AGENT_CONFIG.subagents).toHaveLength(0);
     expect(MINIMAL_AGENT_CONFIG.memory).toHaveLength(0);
     expect(MINIMAL_AGENT_CONFIG.skills).toHaveLength(0);
@@ -36,6 +42,7 @@ describe("minimal DeepSeek agent invariants", () => {
         "read_file",
         "write_file",
         "edit_file",
+        "delete",
         "glob",
         "grep",
         "execute",
@@ -45,9 +52,31 @@ describe("minimal DeepSeek agent invariants", () => {
     );
   });
 
-  it("constructs Deep Agents without exposing custom tools", () => {
+  it("constructs Deep Agents with exactly the approved custom tools", () => {
     const agent = createMinimalDeepAgent();
-    expect(agent.options.tools).toHaveLength(0);
+    expect(agent.options.tools?.map((entry) => entry.name)).toEqual(TYGODNIK_TOOL_NAMES);
+  });
+
+  it("filters model-visible tools through a hard allowlist", async () => {
+    const seen: string[] = [];
+    const request = {
+      tools: [
+        { name: "delete" },
+        { name: "search_tygodnik" },
+        { name: "execute" },
+        { name: "get_latest_tygodnik" },
+      ],
+    };
+
+    await approvedToolBoundaryMiddleware.wrapModelCall!(
+      request as never,
+      ((next: typeof request) => {
+        seen.push(...next.tools.map((entry) => entry.name));
+        return new AIMessage("ok");
+      }) as never
+    );
+
+    expect(seen).toEqual(["search_tygodnik", "get_latest_tygodnik"]);
   });
 
   it("converts only user and assistant messages", () => {

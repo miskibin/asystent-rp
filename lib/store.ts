@@ -12,7 +12,9 @@ interface ChatState {
   models: Model[];
   selectedModel: string;
   addMessage: (message: Message) => void;
+  setMessages: (messages: Message[]) => void;
   updateMessage: (id: string, message: Message) => void;
+  replaceMessageId: (from: string, to: string) => void;
   deleteMessage: (id: string) => void;
   clearMessages: () => void;
   setOptions: (options: Partial<ChatOptions>) => void;
@@ -54,6 +56,7 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           messages: [...state.messages, { ...message, artifacts: message.artifacts || [] }],
         })),
+      setMessages: (messages) => set({ messages }),
       updateMessage: (id, updatedMessage) =>
         set((state) => ({
           messages: state.messages.map((message) =>
@@ -64,6 +67,12 @@ export const useChatStore = create<ChatState>()(
                   data: updatedMessage.data || message.data,
                 }
               : message
+          ),
+        })),
+      replaceMessageId: (from, to) =>
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.id === from ? { ...message, id: to } : message
           ),
         })),
       deleteMessage: (id) =>
@@ -81,10 +90,14 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: "chat-storage",
+      version: 2,
       partialize: (state) => ({
-        messages: state.messages,
         options: state.options,
       }),
+      migrate: (persisted) => {
+        const previous = persisted as Partial<ChatState>;
+        return { options: previous.options } as ChatState;
+      },
     }
   )
 );

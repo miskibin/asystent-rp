@@ -1,16 +1,16 @@
 "use client"
 
 import * as React from "react"
-import { Copy, LogOut, MessageSquare, PanelLeft, Pencil, RefreshCw, Trash2 } from "lucide-react"
+import { Copy, LogOut, PanelLeft, Pencil, RefreshCw, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { useChatContext } from "@/app/ChatContext"
 import { ChatInput, type ChatInputPayload } from "@/components/ui/chat-input"
 import {
   ChatSidebar,
+  ChatSidebarItemList,
   SideActionRow,
   SideIconBtn,
-  SideRow,
   SidebarCollapsibleSection,
 } from "@/components/ui/chat-sidebar"
 import { MessageList, type ChatMessageData } from "@/components/ui/message-list"
@@ -71,11 +71,16 @@ export function ChatWorkspace() {
   const { toast } = useToast()
   const {
     messages,
+    threads,
+    activeThreadId,
+    isThreadsLoading,
     isLoading,
     status,
     handleSubmit,
     stopGenerating,
-    clearMessages,
+    newThread,
+    switchThread,
+    deleteThread,
     deleteMessage,
     editMessage,
     regenerateMessage,
@@ -105,7 +110,6 @@ export function ChatWorkspace() {
     [chatMessages]
   )
   const isEmpty = chatMessages.length === 0
-  const conversationTitle = history[0]?.text || "Nowa rozmowa"
   const drawerOpen = mobileOpen && !isDesktop
 
   React.useEffect(() => {
@@ -138,10 +142,9 @@ export function ChatWorkspace() {
   )
 
   const newChat = React.useCallback(() => {
-    stopGenerating()
-    clearMessages()
+    newThread()
     setMobileOpen(false)
-  }, [clearMessages, stopGenerating])
+  }, [newThread])
 
   const signOut = React.useCallback(async () => {
     await supabase.auth.signOut()
@@ -205,14 +208,26 @@ export function ChatWorkspace() {
             title="Rozmowy"
             open={chatsOpen}
             onToggle={() => setChatsOpen((value) => !value)}
-            count={1}
+            count={threads.length}
           >
-            <SideRow
-              icon={<MessageSquare className="size-4" />}
-              className="bg-sidebar-accent text-sidebar-accent-foreground"
-            >
-              <span className="truncate">{conversationTitle}</span>
-            </SideRow>
+            <ChatSidebarItemList
+              items={threads.map((thread) => ({
+                id: thread.id,
+                title: thread.title,
+              }))}
+              activeId={activeThreadId ?? undefined}
+              listId="recent-chats"
+              draggable={false}
+              groupPinned={false}
+              showStatusDot={false}
+              motion
+              emptyState={isThreadsLoading ? "Ładowanie rozmów…" : "Brak zapisanych rozmów"}
+              onSelect={(id) => {
+                void switchThread(id)
+                setMobileOpen(false)
+              }}
+              onDelete={(id) => void deleteThread(id)}
+            />
           </SidebarCollapsibleSection>
         </ChatSidebar>
       </div>
@@ -246,6 +261,7 @@ export function ChatWorkspace() {
           ) : (
             <MessageList
               messages={chatMessages}
+              conversationKey={activeThreadId ?? "new"}
               isGenerating={isLoading}
               generationStage={isLoading ? "responding" : "idle"}
               generationLabel={status || "Odpowiadam"}

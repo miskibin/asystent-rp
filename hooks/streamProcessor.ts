@@ -1,8 +1,8 @@
 import { Artifact, Message } from "@/lib/types";
-type ProgressData = {
-  type: "status" | "tool_execution" | "response" | "error";
-  messages: Message[];
-};
+type ProgressData =
+  | { type: "thread"; threadId: string; thread: { id: string; title: string; created_at: string; updated_at: string }; userMessageId: string | null }
+  | { type: "done"; threadId: string; assistantMessageId: string }
+  | { type: "status" | "tool_execution" | "response" | "error"; threadId?: string; messages: Message[] };
 
 export class StreamProcessor {
   private decoder = new TextDecoder();
@@ -14,7 +14,9 @@ export class StreamProcessor {
   constructor(
     private readonly updateMessage: (id: string, message: Message) => void,
     private readonly setStatus: (status: string | null) => void,
-    private readonly handleError: (error: unknown) => void
+    private readonly handleError: (error: unknown) => void,
+    private readonly onThread?: (event: Extract<ProgressData, { type: "thread" }>) => void,
+    private readonly onDone?: (event: Extract<ProgressData, { type: "done" }>) => void
   ) {}
 
   private processJsonLine(line: string, messageId: string) {
@@ -22,6 +24,14 @@ export class StreamProcessor {
 
     try {
       const data = JSON.parse(line.slice(6)) as ProgressData;
+      if (data.type === "thread") {
+        this.onThread?.(data);
+        return;
+      }
+      if (data.type === "done") {
+        this.onDone?.(data);
+        return;
+      }
       if (!data?.messages?.[0]) return;
 
       const message = data.messages[0];

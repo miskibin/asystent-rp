@@ -1,11 +1,17 @@
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, AIMessageChunk, HumanMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
+import {
+  createMiddleware,
+  modelCallLimitMiddleware,
+  toolCallLimitMiddleware,
+} from "langchain";
 import {
   createDeepAgent,
   createHarnessProfile,
   registerHarnessProfile,
 } from "deepagents";
-import type { Message } from "@/lib/types";
+import type { Message } from "./types";
+import { TYGODNIK_TOOLS, TYGODNIK_TOOL_NAMES } from "./tygodnik/tools";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
@@ -14,6 +20,7 @@ export const DISABLED_DEEP_AGENT_TOOLS = [
   "read_file",
   "write_file",
   "edit_file",
+  "delete",
   "glob",
   "grep",
   "execute",
@@ -22,7 +29,7 @@ export const DISABLED_DEEP_AGENT_TOOLS = [
 ] as const;
 
 export const MINIMAL_AGENT_CONFIG = {
-  tools: [],
+  tools: TYGODNIK_TOOLS,
   systemPrompt: "",
   subagents: [],
   memory: [],
@@ -30,6 +37,26 @@ export const MINIMAL_AGENT_CONFIG = {
   thinking: "disabled" as const,
   reasoning_effort: "none" as const,
 };
+
+const approvedToolNames = new Set<string>(TYGODNIK_TOOL_NAMES);
+
+// Deep Agents installs filesystem/task middleware internally. This boundary
+// guarantees that the model receives only the three read-only data tools even
+// if a future harness profile or provider match changes.
+export const approvedToolBoundaryMiddleware = createMiddleware({
+  name: "ApprovedToolBoundary",
+  wrapModelCall: (request, handler) =>
+    handler({
+      ...request,
+      tools: request.tools.filter((entry) => approvedToolNames.has(String(entry.name))),
+    }),
+  wrapToolCall: (request, handler) => {
+    if (!approvedToolNames.has(String(request.toolCall.name))) {
+      throw new Error(`Tool is not available: ${request.toolCall.name}`);
+    }
+    return handler(request);
+  },
+});
 
 let profileRegistered = false;
 
@@ -69,6 +96,11 @@ export function createMinimalDeepAgent() {
   return createDeepAgent({
     model: createDeepSeekModel(),
     ...MINIMAL_AGENT_CONFIG,
+    middleware: [
+      approvedToolBoundaryMiddleware,
+      toolCallLimitMiddleware({ runLimit: 2, exitBehavior: "continue" }),
+      modelCallLimitMiddleware({ runLimit: 3, exitBehavior: "end" }),
+    ],
   });
 }
 
@@ -95,15 +127,16 @@ function contentToText(content: unknown): string {
     .join("");
 }
 
-export async function* streamDeepSeek(messages: Message[]) {
+export async function* streamDeepSeek(messages: Message[], signal?: AbortSignal) {
   const agent = createMinimalDeepAgent();
   const stream = await agent.stream(
     { messages: toLangChainMessages(messages) },
-    { streamMode: "messages" }
+    { streamMode: "messages", recursionLimit: 8, signal }
   );
 
   for await (const item of stream) {
     const chunk = Array.isArray(item) ? item[0] : item;
+    if (!AIMessageChunk.isInstance(chunk) && !AIMessage.isInstance(chunk)) continue;
     const text = contentToText((chunk as { content?: unknown })?.content);
     if (text) yield text;
   }

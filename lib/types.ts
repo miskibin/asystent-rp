@@ -1,10 +1,27 @@
+export type ChatToolStep = {
+  id: string;
+  name: string;
+  status?: "pending" | "running" | "done" | "error";
+  input?: string;
+  output?: string;
+};
+
+export type ChatMessagePart =
+  | { type: "thinking"; id: string; text: string }
+  | { type: "text"; id: string; text: string }
+  | { type: "tool"; id: string; tool: ChatToolStep };
+
 export type Message = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  artifacts?: Artifact[]; // Artifacts are addotonal data that models can use to generate responses
-  data?: any[]; // Data is data from the tool. This is not visivle for the model
+  parts?: ChatMessagePart[];
+  tools?: ChatToolStep[];
+  workedFor?: number;
+  artifacts?: Artifact[];
+  data?: any[];
 };
+
 export interface ActResponse {
   act_url: string;
   act_title: string;
@@ -14,6 +31,7 @@ export interface ActResponse {
   act_announcement_date: string;
   similarity_score: number;
 }
+
 export function isActResponse(obj: any): obj is ActResponse {
   return (
     typeof obj === "object" &&
@@ -27,12 +45,14 @@ export function isActResponse(obj: any): obj is ActResponse {
     typeof obj.similarity_score === "number"
   );
 }
+
 export interface Artifact {
   type: string;
   question: string;
   searchQuery: string;
   data: any;
 }
+
 export type Model = {
   name: string;
   short: string;
@@ -51,6 +71,7 @@ export type ChatPlugin = {
   enabled: boolean;
   name: string;
 };
+
 export type ChatOptions = {
   temperature: number;
   topP: number;

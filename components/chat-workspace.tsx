@@ -99,6 +99,9 @@ export function ChatWorkspace() {
           id: message.id,
           content: message.content,
           sender: message.role as "user" | "assistant",
+          parts: message.parts,
+          tools: message.tools,
+          workedFor: message.workedFor,
         })),
     [messages]
   )

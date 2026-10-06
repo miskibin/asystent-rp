@@ -1,3 +1,5 @@
+import type { ChatDocument } from "./chat-request";
+
 export type ChatToolStep = {
   id: string;
   name: string;
@@ -18,6 +20,8 @@ export type Message = {
   parts?: ChatMessagePart[];
   tools?: ChatToolStep[];
   workedFor?: number;
+  documents?: ChatDocument[];
+  sources?: string[];
   artifacts?: Artifact[];
   data?: any[];
 };

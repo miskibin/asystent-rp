@@ -11,6 +11,7 @@ import {
   MINIMAL_AGENT_CONFIG,
   toLangChainMessages,
 } from "../lib/deepseek-agent";
+import { CHAT_UI_TOOL_NAMES } from "../lib/chat-ui-tools";
 import { SEJM_DATA_TOOL_NAMES } from "../lib/tygodnik/tools";
 
 beforeEach(() => {
@@ -35,12 +36,13 @@ describe("minimal DeepSeek agent invariants", () => {
     });
   });
 
-  it("configures only the three bounded Tygodnik tools", () => {
+  it("configures bounded data tools and presentation tools", () => {
     expect(MINIMAL_AGENT_CONFIG.systemPrompt).toContain("Odpowiadaj po polsku");
     expect(MINIMAL_AGENT_CONFIG.tools.map((entry) => entry.name)).toEqual([
       "search_sejm_data",
       "get_sejm_record",
       "get_latest_sejm_sitting",
+      ...CHAT_UI_TOOL_NAMES,
     ]);
     expect(MINIMAL_AGENT_CONFIG.subagents).toHaveLength(0);
     expect(MINIMAL_AGENT_CONFIG.memory).toHaveLength(0);
@@ -63,7 +65,7 @@ describe("minimal DeepSeek agent invariants", () => {
 
   it("constructs Deep Agents with exactly the approved custom tools", () => {
     const agent = createMinimalDeepAgent();
-    expect(agent.options.tools?.map((entry) => entry.name)).toEqual(SEJM_DATA_TOOL_NAMES);
+    expect(agent.options.tools?.map((entry) => entry.name)).toEqual([...SEJM_DATA_TOOL_NAMES, ...CHAT_UI_TOOL_NAMES]);
   });
 
   it("filters model-visible tools through a hard allowlist", async () => {

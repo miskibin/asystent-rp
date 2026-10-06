@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
+import type { z } from "zod";
+import { chatRequestSchema, documentContext, documentsSchema } from "@/lib/chat-request";
+import { CHAT_UI_TOOL_NAMES } from "@/lib/chat-ui-tools";
+import { SEJM_DATA_TOOL_NAMES } from "@/lib/tygodnik/tools";
 
 import { streamDeepSeek } from "@/lib/deepseek-agent";
 import {
@@ -11,7 +14,6 @@ import {
 import {
   titleFromMessage,
   trimModelHistory,
-  USER_MESSAGE_CHAR_LIMIT,
 } from "@/lib/chat-persistence";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { ChatMessagePart, ChatToolStep, Message } from "@/lib/types";
@@ -19,29 +21,10 @@ import type { ChatMessagePart, ChatToolStep, Message } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const chatRequestSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("send"),
-    threadId: z.string().uuid().optional(),
-    content: z.string().trim().min(1).max(USER_MESSAGE_CHAR_LIMIT),
-  }),
-  z.object({
-    action: z.literal("edit"),
-    threadId: z.string().uuid(),
-    messageId: z.string().uuid(),
-    content: z.string().trim().min(1).max(USER_MESSAGE_CHAR_LIMIT),
-  }),
-  z.object({
-    action: z.literal("regenerate"),
-    threadId: z.string().uuid(),
-    messageId: z.string().uuid(),
-  }),
-]);
-
 type Supabase = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 type ChatAction = z.infer<typeof chatRequestSchema>;
-type ThreadRow = { id: string; title: string; created_at: string; updated_at: string };
-type MessageRow = { id: string; role: "user" | "assistant"; content: string; message_order: number };
+type ThreadRow = { id: string; title: string; created_at: string; updated_at: string; pinned: boolean; sort_order: number };
+type MessageRow = { id: string; role: "user" | "assistant"; content: string; message_order: number; process?: Pick<Message, "documents"> };
 
 function sse(data: unknown, eventId: string) {
   return `id: ${eventId}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -50,7 +33,7 @@ function sse(data: unknown, eventId: string) {
 async function ownedThread(supabase: Supabase, threadId: string): Promise<ThreadRow> {
   const { data, error } = await supabase
     .from("chat_threads")
-    .select("id,title,created_at,updated_at")
+    .select("id,title,created_at,updated_at,pinned,sort_order")
     .eq("id", threadId)
     .maybeSingle();
   if (error) throw error;
@@ -70,7 +53,7 @@ async function prepareChatRun(
     const { data, error } = await supabase
       .from("chat_threads")
       .insert({ user_id: userId, title: titleFromMessage(action.content) })
-      .select("id,title,created_at,updated_at")
+      .select("id,title,created_at,updated_at,pinned,sort_order")
       .single();
     if (error) throw error;
     thread = data as ThreadRow;
@@ -86,6 +69,7 @@ async function prepareChatRun(
         user_id: userId,
         role: "user",
         content: action.content,
+        process: { documents: action.documents },
       })
       .select("id")
       .single();
@@ -132,7 +116,7 @@ async function prepareChatRun(
 
   const { data: rows, error: historyError } = await supabase
     .from("chat_messages")
-    .select("id,role,content,message_order")
+    .select("id,role,content,message_order,process")
     .eq("thread_id", thread.id)
     .order("message_order", { ascending: false })
     .limit(12);
@@ -140,7 +124,10 @@ async function prepareChatRun(
   const history = trimModelHistory(
     ((rows ?? []) as MessageRow[])
       .reverse()
-      .map(({ id, role, content }) => ({ id, role, content }))
+      .map(({ id, role, content, process }) => {
+        const documents = documentsSchema.safeParse(process?.documents ?? []);
+        return { id, role, content: content + documentContext(documents.success ? documents.data : []) };
+      })
   );
   return { thread, userMessageId, history };
 }
@@ -172,6 +159,7 @@ export async function POST(request: NextRequest) {
       let sequence = 0;
       let partSequence = 0;
       let usedDataTool = false;
+      let askedQuestion = false;
       const startedAt = Date.now();
       const allowedUrls = new Set<string>();
       const parts: ChatMessagePart[] = [];
@@ -229,7 +217,7 @@ export async function POST(request: NextRequest) {
             user_id: data.user.id,
             role: "assistant",
             content: assistantContent,
-            process: { parts, workedFor },
+            process: { parts, workedFor, sources: [...allowedUrls] },
           })
           .select("id")
           .single();
@@ -249,14 +237,14 @@ export async function POST(request: NextRequest) {
           `${prepared.thread.id}:thread`
         );
 
-        for await (const event of streamDeepSeek(prepared.history, request.signal)) {
+        for await (const event of streamDeepSeek(prepared.history, request.signal, parsed.data.mode)) {
           if (event.type === "text") {
             pendingText += event.content;
             continue;
           }
 
           if (event.type === "tool_start" || event.type === "tool_update") {
-            usedDataTool = true;
+            if (SEJM_DATA_TOOL_NAMES.some((name) => name === event.name)) usedDataTool = true;
             flushText();
             const tool: ChatToolStep = {
               id: event.id,
@@ -272,15 +260,25 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          usedDataTool = true;
-          for (const url of collectHttpUrlsFromToolOutput(event.output)) {
-            allowedUrls.add(url);
+          if (SEJM_DATA_TOOL_NAMES.some((name) => name === event.name)) {
+            usedDataTool = true;
+            for (const url of collectHttpUrlsFromToolOutput(event.output)) allowedUrls.add(url);
+          }
+          if (event.name === "ask_question" && event.status === "done") askedQuestion = true;
+          const existingPart = parts.find((part) => part.type === "tool" && part.tool.id === event.id);
+          if (existingPart?.type === "tool" && event.name === "draft_document" && usedDataTool) {
+            try {
+              const args = JSON.parse(existingPart.tool.input ?? "{}");
+              if (typeof args.content === "string") args.content = keepOnlyGroundedLinks(args.content, allowedUrls);
+              existingPart.tool = { ...existingPart.tool, input: JSON.stringify(args) };
+            } catch { /* Incomplete arguments do not render a document. */ }
           }
           const tool: ChatToolStep = {
             id: event.id,
             name: displayToolName(event.name),
+            input: existingPart?.type === "tool" ? existingPart.tool.input : undefined,
             status: event.status,
-            output: summarizeToolOutput(event.name, event.output),
+            output: CHAT_UI_TOOL_NAMES.some((name) => name === event.name) ? event.output : summarizeToolOutput(event.name, event.output),
           };
           upsertTool(tool);
           push(
@@ -291,7 +289,8 @@ export async function POST(request: NextRequest) {
 
         flushText();
         if (!assistantContent.trim()) {
-          pendingText = "Nie udało się przygotować odpowiedzi na podstawie dostępnych danych.";
+          const presentedResult = parts.some((part) => part.type === "tool" && part.tool.status === "done" && CHAT_UI_TOOL_NAMES.some((name) => name === part.tool.name));
+          pendingText = askedQuestion ? "Wybierz odpowiedzi, żebym mógł kontynuować." : presentedResult ? "Wynik jest gotowy — znajdziesz go powyżej." : "Nie udało się przygotować odpowiedzi na podstawie dostępnych danych.";
           flushText();
         }
 
@@ -303,6 +302,7 @@ export async function POST(request: NextRequest) {
               threadId: prepared.thread.id,
               assistantMessageId: assistant.id,
               workedFor: assistant.workedFor,
+              sources: [...allowedUrls],
             },
             `${prepared.thread.id}:done`
           );
@@ -320,6 +320,7 @@ export async function POST(request: NextRequest) {
                   threadId: prepared.thread.id,
                   assistantMessageId: assistant.id,
                   workedFor: assistant.workedFor,
+                  sources: [...allowedUrls],
                 },
                 `${prepared.thread.id}:done`
               );

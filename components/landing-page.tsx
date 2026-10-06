@@ -1,8 +1,10 @@
 "use client";
 
+import { FaGithub as Github } from "react-icons/fa";
+
 import { useState, type ReactNode } from "react";
 import Image from "next/image";
-import { Github, Landmark, Loader2, LockKeyhole } from "lucide-react";
+import { Landmark, Loader2, LockKeyhole } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";

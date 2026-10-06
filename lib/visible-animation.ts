@@ -1,3 +1,4 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
 import { useCallback } from "react"
 
 /**

@@ -1,3 +1,16 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * Shell-style prompt recall for the composer. ArrowUp walks back through the
+ * prompts already sent in this conversation, ArrowDown walks forward, and one
+ * step past the newest empties the composer again.
+ *
+ * The state is deliberately tiny and derived: a position is an entry id plus
+ * the text that was put in the composer, so the caller keeps no copy of the
+ * history and nothing has to be persisted or synced. The moment the composer
+ * stops matching `recalled` the user has typed or sent, and browsing is over.
+ */
+
+/** One recallable prompt. `id` is whatever the host calls that message. */
 export type PromptHistoryEntry = { id: string; prompt: string }
 
 /**

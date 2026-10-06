@@ -1,3 +1,15 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * Which strings inside an answer are file paths — and which of them only look
+ * like one. It is the whole difference between a chip that opens a file and a
+ * chip that opens nothing, and both mistakes are easy: `and/or` is not a path,
+ * `example.com` is a host, `/chat/settings` is a route, and `main.pl:42` is a
+ * Perl file rather than a Polish domain precisely *because* of the `:42`.
+ *
+ * Nothing here touches the filesystem. It answers "does this read as a path",
+ * and the host resolves it.
+ */
+
 export type FilePathPosition = { path: string; line?: number; column?: number }
 
 const WINDOWS_DRIVE_RE = /^[a-zA-Z]:([/\\]|$)/

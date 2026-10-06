@@ -8,7 +8,7 @@ import type {
 type ThreadEvent = {
   type: "thread";
   threadId: string;
-  thread: { id: string; title: string; created_at: string; updated_at: string };
+  thread: { id: string; title: string; created_at: string; updated_at: string; pinned?: boolean; sort_order?: number };
   userMessageId: string | null;
 };
 
@@ -17,6 +17,7 @@ type DoneEvent = {
   threadId: string;
   assistantMessageId: string;
   workedFor?: number;
+  sources?: string[];
 };
 
 type ProgressData =
@@ -34,6 +35,8 @@ export class StreamProcessor {
   private currentParts: ChatMessagePart[] = [];
   private partSequence = 0;
   private workedFor: number | undefined;
+  private sources: string[] = [];
+  private failed = false;
 
   constructor(
     private readonly updateMessage: (id: string, message: Message) => void,
@@ -47,7 +50,7 @@ export class StreamProcessor {
     this.currentContent += content;
     const last = this.currentParts.at(-1);
     if (last?.type === "text") {
-      last.text += content;
+      this.currentParts[this.currentParts.length - 1] = { ...last, text: last.text + content };
       return;
     }
     this.currentParts.push({
@@ -90,6 +93,7 @@ export class StreamProcessor {
       }
       if (data.type === "done") {
         this.workedFor = data.workedFor;
+        this.sources = data.sources ?? [];
         this.updateCurrentMessage(messageId);
         this.onDone?.(data);
         return;
@@ -138,6 +142,7 @@ export class StreamProcessor {
       }
     } catch (error) {
       console.error("Error processing stream chunk:", error);
+      this.failed = true;
       this.handleError(error);
     }
   }
@@ -149,6 +154,7 @@ export class StreamProcessor {
       content: this.currentContent,
       parts: this.currentParts.length > 0 ? [...this.currentParts] : undefined,
       workedFor: this.workedFor,
+      sources: this.sources,
       artifacts: this.currentArtifacts,
       data: this.currentData,
     });
@@ -174,6 +180,7 @@ export class StreamProcessor {
 
       if (this.buffer.trim()) this.processJsonLine(this.buffer, messageId);
       this.updateCurrentMessage(messageId);
+      if (this.failed) throw new Error("Odpowiedź zawiera błąd strumienia.");
     } catch (error) {
       this.handleError(error);
       throw error;

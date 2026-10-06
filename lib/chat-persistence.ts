@@ -1,26 +1,31 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Message } from "./types";
+import { documentsSchema } from "./chat-request";
 
-type StoredProcess = Pick<Message, "parts" | "tools" | "workedFor">;
+type StoredProcess = Pick<Message, "parts" | "tools" | "workedFor" | "documents" | "sources">;
 
 export type ChatThread = {
   id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
+  pinned: boolean;
+  sortOrder: number;
 };
 
 export const CHAT_LIST_LIMIT = 50;
 export const CHAT_MESSAGE_LIMIT = 200;
 export const MODEL_HISTORY_MESSAGE_LIMIT = 12;
 export const MODEL_HISTORY_CHAR_LIMIT = 16_000;
-export const USER_MESSAGE_CHAR_LIMIT = 4_000;
+export { USER_MESSAGE_CHAR_LIMIT } from "./chat-request";
 
 export async function listChatThreads(client: SupabaseClient): Promise<ChatThread[]> {
   const { data, error } = await client
     .from("chat_threads")
-    .select("id,title,created_at,updated_at")
+    .select("id,title,created_at,updated_at,pinned,sort_order")
+    .order("pinned", { ascending: false })
+    .order("sort_order", { ascending: true })
     .order("updated_at", { ascending: false })
     .limit(CHAT_LIST_LIMIT);
   if (error) throw error;
@@ -29,6 +34,8 @@ export async function listChatThreads(client: SupabaseClient): Promise<ChatThrea
     title: row.title as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    pinned: Boolean(row.pinned),
+    sortOrder: Number(row.sort_order ?? 0),
   }));
 }
 
@@ -39,6 +46,10 @@ function storedProcess(value: unknown): StoredProcess {
     parts: Array.isArray(process.parts) ? process.parts : undefined,
     tools: Array.isArray(process.tools) ? process.tools : undefined,
     workedFor: typeof process.workedFor === "number" ? process.workedFor : undefined,
+    documents: documentsSchema.safeParse(process.documents ?? []).success ? process.documents : undefined,
+    sources: Array.isArray(process.sources) ? process.sources.filter((url) => {
+      try { return typeof url === "string" && ["http:", "https:"].includes(new URL(url).protocol); } catch { return false; }
+    }).slice(0, 30) : undefined,
   };
 }
 
@@ -88,4 +99,20 @@ export function trimModelHistory<T extends { content: string }>(messages: T[]): 
   }
 
   return selected;
+}
+
+export function sortChatThreads(threads: ChatThread[]) {
+  return [...threads].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sortOrder - b.sortOrder || b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function updateChatThread(client: SupabaseClient, id: string, patch: { title?: string; pinned?: boolean }) {
+  const title = patch.title?.trim().slice(0, 120);
+  if (patch.title !== undefined && !title) throw new Error("Podaj nazwę rozmowy.");
+  const { error } = await client.from("chat_threads").update({ ...patch, ...(title ? { title } : {}) }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function reorderChatThreads(client: SupabaseClient, ids: string[]) {
+  const { error } = await client.rpc("reorder_chat_threads", { thread_ids: ids });
+  if (error) throw error;
 }

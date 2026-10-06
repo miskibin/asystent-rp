@@ -1,20 +1,19 @@
 # Asystent RP
 
-[Asystent RP](https://chat.sejm-stats.pl/) pomaga analizować dane Sejmu, ustawy, głosowania i wypowiedzi oraz przygotowywać robocze pisma. Odpowiedzi powstają z użyciem DeepSeek i narzędzi odczytujących dane Tygodnika Sejmowego. Logowanie, rozmowy i uprawnienia użytkowników obsługuje Supabase.
+[Asystent RP](https://chat.tygodniksejmowy.pl/) pomaga analizować dane Sejmu, ustawy, głosowania i wypowiedzi oraz przygotowywać robocze pisma. Odpowiedzi powstają z użyciem DeepSeek i narzędzi odczytujących dane Tygodnika Sejmowego. Logowanie, rozmowy i uprawnienia użytkowników obsługuje Supabase.
 
 ## Interfejs chat-components
 
 Interfejs korzysta z komponentów źródłowych [miskibin/chat-components](https://github.com/miskibin/chat-components), zgodnie z modelem dystrybucji registry tej biblioteki. Pochodzenie oraz SHA-256 plików zapisuje `chat-components.lock.json`; pliki biblioteki pozostają identyczne z upstreamem, a integracja aplikacji znajduje się w `components/chat-workspace.tsx`.
 
-- Nawigacja rozmów: wyszukiwanie, zmiana nazwy, przypinanie, sortowanie przez przeciąganie, operacje zbiorcze, zwijanie i zmiana szerokości panelu.
-- Edytor wiadomości: wiele wierszy, załączniki, komendy `/`, skróty `$`, wzmianki `@` o dokumentach, historia promptów, kolejka podczas generowania i szkice zapisywane przez Ctrl/Cmd+S. Szkice wymagają wybrania edycji przed wysłaniem.
-- Tryby Asystent, Pytanie i Plan przekazywane do backendu; selektor pokazuje jedyny model skonfigurowany na serwerze. Wskaźnik kontekstu szacuje rozmiar przyciętej historii w znakach, wraz z treścią załączników.
-- Wiadomości: Markdown, tabele, kod, matematyka, Mermaid, oś pracy narzędzi, cytowanie zaznaczenia, kopiowanie, pobieranie, edycja, ponowne generowanie oraz źródła zwrócone przez narzędzia danych.
-- Narzędzia prezentacji: pytania z wyborem odpowiedzi, plany i listy zadań, robocze dokumenty. Odpowiedź na pytanie jest zapisywana i przekazywana w następnym wywołaniu modelu.
-- Dokumenty: drzewo plików, podgląd, porównanie dwóch tekstów, komentarz do zakresu wierszy i pobieranie; panel dzielony na desktopie i dostępny z klawiatury podgląd na telefonie.
-- Eksport rozmowy do Markdown, motyw jasny/ciemny, propozycje pytań i mobilny panel rozmów.
+- Rozmowy: tytuł i data w dwóch wierszach, wyszukiwanie, zmiana nazwy, usuwanie oraz zwijany panel ze zmianą szerokości. Odwiedzone rozmowy są przechowywane w pamięci sesji; pierwsze otwarcie pokazuje stan ładowania.
+- Edytor wiadomości: wiele wierszy, niewielkie załączniki tekstowe i zatrzymywanie odpowiedzi.
+- Wiadomości: Markdown, tabele, kod, matematyka, Mermaid, kopiowanie, edycja, ponowne generowanie i źródła.
+- Pływający przycisk motywu, propozycje pytań w nowej rozmowie oraz mobilny panel rozmów i przycisk nowego czatu.
 
-Backend obsługuje dokumenty tekstowe TXT, MD, CSV, JSON, XML, YAML i LOG: maksymalnie 3 pliki, łącznie 12 000 znaków. PDF, obrazy i pliki binarne wymagają osobnego mechanizmu ekstrakcji. Terminal, wybór katalogów systemowych i wykonywanie zmian w kodzie nie mają odpowiedników w backendzie asystenta obywatelskiego. Narzędzia planów i dokumentów przygotowują treść; nie wysyłają pism i nie wykonują działań za użytkownika.
+To zwykły chatbot: interfejs nie udostępnia trybów agenta, planów, komend ani paneli pracy na dokumentach. Backend wywołuje model oraz trzy narzędzia odczytujące dane Sejmu, z limitem czterech wyszukiwań i pięciu wywołań modelu na odpowiedź. Doprecyzowanie i przygotowywane treści są częścią zwykłej rozmowy.
+
+Backend obsługuje dokumenty tekstowe TXT, MD, CSV, JSON, XML, YAML i LOG: maksymalnie 3 pliki, łącznie 12 000 znaków. PDF, obrazy i pliki binarne wymagają osobnego mechanizmu ekstrakcji.
 
 ## Uruchomienie
 
@@ -60,4 +59,5 @@ npm run test:e2e
 
 Testy jednostkowe obejmują granice API, narzędzia, dokumenty, ograniczenia modelu, źródła i strumień SSE. Testy Playwright uruchamiają build produkcyjny i podstawiają odpowiedzi Supabase oraz API czatu; weryfikują przepływy UI bez kluczy do usług. Nie zastępują testu połączenia z rzeczywistym Supabase i DeepSeek. Opcjonalna zmienna `CHAT_TEST_CHROMIUM` wskazuje lokalny plik wykonywalny przeglądarki.
 
-Stos: Next.js 16, React 19, Tailwind CSS 4, chat-components, LangChain/deepagents, DeepSeek i Supabase.
+Stos: Next.js 16, React 19, Tailwind CSS 4, chat-components, LangChain Core/OpenAI, DeepSeek i Supabase.
+

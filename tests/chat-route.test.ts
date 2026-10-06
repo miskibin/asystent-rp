@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 const state = vi.hoisted(() => ({ events: [] as unknown[], inserts: [] as { table: string; data: Record<string, unknown> }[], history: [] as unknown[], user: true }));
-vi.mock("../lib/deepseek-agent", () => ({ streamDeepSeek: async function* (history: unknown[]) { state.history = history; for (const event of state.events) yield event; } }));
+vi.mock("../lib/deepseek-chat", () => ({ streamDeepSeek: async function* (history: unknown[]) { state.history = history; for (const event of state.events) yield event; } }));
 vi.mock("../lib/supabase/server", () => ({ createServerSupabaseClient: async () => ({
   auth: { getUser: async () => ({ data: { user: state.user ? { id: "11111111-1111-4111-8111-111111111111" } : null } }) },
   from: (table: string) => {
@@ -37,30 +37,18 @@ describe("chat route integration", () => {
     expect(storedUser?.data.process).toMatchObject({ documents: [{ name: "projekt.md", content: "Artykuł 1." }] });
     expect(state.history[0]).toMatchObject({ content: expect.stringContaining("Artykuł 1.") });
   });
-  it("preserves question tool data and completion metadata across SSE and persistence", async () => {
-    const input = JSON.stringify({ title: "Temat", questions: [{ id: "q", prompt: "Który?", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }] });
-    state.events = [
-      { type: "tool_start", id: "ask", name: "ask_question", input },
-      { type: "tool_end", id: "ask", name: "ask_question", status: "done", output: '{"answers":{},"source":"agent"}' },
-    ];
-    const stream = await (await POST(request({ action: "send", content: "Pomóż" }))).text();
-    expect(stream).toContain("Wybierz odpowiedzi");
-    const storedAssistant = state.inserts.find((entry) => entry.data.role === "assistant");
-    expect(storedAssistant?.data.process).toMatchObject({ parts: [{ type: "tool", tool: { name: "ask_question", input } }, { type: "text" }] });
-  });
-  it("grounds generated-document links in actual data-tool results and excludes presentation output as a source", async () => {
+  it("grounds answer links in actual search results and persists sources", async () => {
     state.events = [
       { type: "tool_start", id: "search", name: "search_sejm_data", input: "{}" },
       { type: "tool_end", id: "search", name: "search_sejm_data", status: "done", output: '{"items":[{"url":"https://sejm.gov.pl/valid"}]}' },
-      { type: "tool_start", id: "doc", name: "draft_document", input: '{"title":"Pismo","content":"[Źródło](https://sejm.gov.pl/valid) [Błąd](https://fake.invalid/)"}' },
-      { type: "tool_end", id: "doc", name: "draft_document", status: "done", output: "Gotowe." },
-      { type: "text", content: "Gotowe." },
+      { type: "text", content: "[Źródło](https://sejm.gov.pl/valid) [Błąd](https://fake.invalid/)" },
     ];
-    const stream = await (await POST(request({ action: "send", content: "Pismo" }))).text();
+    const stream = await (await POST(request({ action: "send", content: "Co uchwalono?", mode: "plan" }))).text();
     const storedAssistant = state.inserts.find((entry) => entry.data.role === "assistant");
-    const process = storedAssistant?.data.process as { sources: string[]; parts: { type: string; tool?: { name: string; input: string } }[] };
-    expect(process.sources).toEqual(["https://sejm.gov.pl/valid"]);
-    expect(process.parts.find((part) => part.tool?.name === "draft_document")?.tool?.input).not.toContain("fake.invalid");
+    expect(storedAssistant?.data.content).toContain("https://sejm.gov.pl/valid");
+    expect(storedAssistant?.data.content).not.toContain("fake.invalid");
+    expect(storedAssistant?.data.process).toMatchObject({ sources: ["https://sejm.gov.pl/valid"] });
+    expect(stream).toContain('"type":"done"');
     expect(stream).toContain('"sources":["https://sejm.gov.pl/valid"]');
   });
   it("rejects unauthorized and invalid requests before changing stored conversations", async () => {
@@ -69,14 +57,10 @@ describe("chat route integration", () => {
     expect((await POST(request({ action: "send", content: "x" }))).status).toBe(401);
     expect(state.inserts).toEqual([]);
   });
-  it("finishes a tool-only plan as a successful answer", async () => {
-    state.events = [
-      { type: "tool_start", id: "plan", name: "create_plan", input: '{"title":"Plan","plan":"Sprawdź etap","todos":[]}' },
-      { type: "tool_end", id: "plan", name: "create_plan", status: "done", output: "Plan przedstawiony." },
-    ];
-    const stream = await (await POST(request({ action: "send", content: "Przygotuj plan" }))).text();
-    expect(stream).toContain("Wynik jest gotowy");
+  it("returns a plain fallback when the model produces no answer", async () => {
+    const stream = await (await POST(request({ action: "send", content: "Pytanie" }))).text();
+    expect(stream).toContain("Nie udało się przygotować odpowiedzi");
     expect(stream).toContain('"type":"done"');
-    expect(stream).not.toContain("Nie udało się przygotować odpowiedzi");
+    expect(state.inserts.find((entry) => entry.data.role === "assistant")?.data.content).toContain("dostępnych danych");
   });
 });

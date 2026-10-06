@@ -9,7 +9,7 @@ import {
   SEJM_DATA_TOOLS,
   SEJM_DATA_TOOL_NAMES,
 } from "../lib/tygodnik/tools";
-import { streamAgentEvents } from "../lib/deepseek-agent";
+import { streamChatEvents } from "../lib/deepseek-chat";
 
 describe("Tygodnik tools", () => {
   it("exposes exactly three read-only contracts", () => {
@@ -103,7 +103,7 @@ describe("Tygodnik tools", () => {
     }
 
     const events = [];
-    for await (const event of streamAgentEvents(chunks())) events.push(event);
+    for await (const event of streamChatEvents(chunks())) events.push(event);
 
     expect(events).toEqual([
       { type: "text", content: "Sprawdzę." },

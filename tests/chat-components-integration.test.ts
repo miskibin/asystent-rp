@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { AIMessageChunk, ToolMessage } from "@langchain/core/messages";
-import { chatRequestSchema, documentsSchema, expandTaskPrompt } from "../lib/chat-request";
+import { chatRequestSchema, documentsSchema } from "../lib/chat-request";
 import { filesFromMessages, exportConversation } from "../lib/chat-files";
-import { streamAgentEvents, toLangChainMessages } from "../lib/deepseek-agent";
+import { streamChatEvents, toLangChainMessages } from "../lib/deepseek-chat";
 import { collectHttpUrlsFromToolOutput } from "../lib/grounded-response";
 import { StreamProcessor } from "../hooks/streamProcessor";
 import type { Message } from "../lib/types";
@@ -18,15 +18,12 @@ describe("chat-components integration", () => {
       [{ name: "a.txt", content: "x".repeat(7_000) }, { name: "b.txt", content: "x".repeat(7_000) }],
       Array.from({ length: 4 }, (_, n) => ({ name: `${n}.txt`, content: "x" })),
     ]) expect(documentsSchema.safeParse(documents).success).toBe(false);
-    expect(chatRequestSchema.safeParse({ action: "send", content: "Pytanie", mode: "plan" }).success).toBe(true);
-    expect(chatRequestSchema.safeParse({ action: "send", content: "Pytanie", mode: "terminal" }).success).toBe(false);
+
   });
 
-  it("expands registered commands and skills without mangling ordinary text", () => {
-    expect(expandTaskPrompt("/podsumuj projekt")).toContain("Podsumuj najważniejsze fakty");
-    expect(expandTaskPrompt("$pismo przygotuj wniosek")).toContain("wersję roboczą pisma");
-    expect(expandTaskPrompt("/posiedzenie")).toContain("ostatnim posiedzeniu");
-    expect(expandTaskPrompt("Cena $100 i ścieżka /plik")).toBe("Cena $100 i ścieżka /plik");
+  it("preserves ordinary text and ignores legacy mode settings", () => {
+    const parsed = chatRequestSchema.parse({ action: "send", content: "/pismo Cena $100 i @dokument", mode: "plan" });
+    expect(parsed).toEqual({ action: "send", content: "/pismo Cena $100 i @dokument", documents: [] });
   });
 
   it("passes document text to the model without adding artificial assistant reasoning", () => {
@@ -42,7 +39,7 @@ describe("chat-components integration", () => {
       yield new AIMessageChunk({ content: "", tool_call_chunks: [{ id: "second", name: "get_sejm_record", args: '{"id":"B"}', index: 0 }] });
     }
     const events = [];
-    for await (const event of streamAgentEvents(chunks())) events.push(event);
+    for await (const event of streamChatEvents(chunks())) events.push(event);
     expect(events.filter((event) => event.type === "tool_start").map((event) => event.id)).toEqual(["first", "second"]);
     expect(events.at(-1)).toMatchObject({ name: "get_sejm_record", input: '{"id":"B"}' });
   });
@@ -53,8 +50,8 @@ describe("chat-components integration", () => {
     const errors: unknown[] = [];
     const processor = new StreamProcessor((_id, message) => { latest = message; }, () => {}, (error) => errors.push(error), undefined, (event) => { persisted = event.assistantMessageId; });
     const frames = [
-      { type: "tool_start", tool: { id: "t", name: "ask_question", status: "running", input: '{"questions":[]}' } },
-      { type: "tool_end", tool: { id: "t", name: "ask_question", status: "done", output: '{"answers":{}}' } },
+      { type: "tool_start", tool: { id: "t", name: "search_sejm_data", status: "running", input: '{"query":"Sejm"}' } },
+      { type: "tool_end", tool: { id: "t", name: "search_sejm_data", status: "done", output: '{"items":[]}' } },
       { type: "response", messages: [{ role: "assistant", content: "Zażółć gęślą jaźń" }] },
       { type: "done", threadId: THREAD_ID, assistantMessageId: "stored", workedFor: 4, sources: ["https://tygodniksejmowy.pl/"] },
     ];

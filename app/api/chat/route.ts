@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { z } from "zod";
 import { chatRequestSchema, documentContext, documentsSchema } from "@/lib/chat-request";
-import { CHAT_UI_TOOL_NAMES } from "@/lib/chat-ui-tools";
 import { SEJM_DATA_TOOL_NAMES } from "@/lib/tygodnik/tools";
 
-import { streamDeepSeek } from "@/lib/deepseek-agent";
+import { streamDeepSeek } from "@/lib/deepseek-chat";
 import {
   collectHttpUrlsFromToolOutput,
   displayToolName,
@@ -159,7 +158,6 @@ export async function POST(request: NextRequest) {
       let sequence = 0;
       let partSequence = 0;
       let usedDataTool = false;
-      let askedQuestion = false;
       const startedAt = Date.now();
       const allowedUrls = new Set<string>();
       const parts: ChatMessagePart[] = [];
@@ -237,7 +235,7 @@ export async function POST(request: NextRequest) {
           `${prepared.thread.id}:thread`
         );
 
-        for await (const event of streamDeepSeek(prepared.history, request.signal, parsed.data.mode)) {
+        for await (const event of streamDeepSeek(prepared.history, request.signal)) {
           if (event.type === "text") {
             pendingText += event.content;
             continue;
@@ -264,21 +262,13 @@ export async function POST(request: NextRequest) {
             usedDataTool = true;
             for (const url of collectHttpUrlsFromToolOutput(event.output)) allowedUrls.add(url);
           }
-          if (event.name === "ask_question" && event.status === "done") askedQuestion = true;
           const existingPart = parts.find((part) => part.type === "tool" && part.tool.id === event.id);
-          if (existingPart?.type === "tool" && event.name === "draft_document" && usedDataTool) {
-            try {
-              const args = JSON.parse(existingPart.tool.input ?? "{}");
-              if (typeof args.content === "string") args.content = keepOnlyGroundedLinks(args.content, allowedUrls);
-              existingPart.tool = { ...existingPart.tool, input: JSON.stringify(args) };
-            } catch { /* Incomplete arguments do not render a document. */ }
-          }
           const tool: ChatToolStep = {
             id: event.id,
             name: displayToolName(event.name),
             input: existingPart?.type === "tool" ? existingPart.tool.input : undefined,
             status: event.status,
-            output: CHAT_UI_TOOL_NAMES.some((name) => name === event.name) ? event.output : summarizeToolOutput(event.name, event.output),
+            output: summarizeToolOutput(event.name, event.output),
           };
           upsertTool(tool);
           push(
@@ -289,8 +279,7 @@ export async function POST(request: NextRequest) {
 
         flushText();
         if (!assistantContent.trim()) {
-          const presentedResult = parts.some((part) => part.type === "tool" && part.tool.status === "done" && CHAT_UI_TOOL_NAMES.some((name) => name === part.tool.name));
-          pendingText = askedQuestion ? "Wybierz odpowiedzi, żebym mógł kontynuować." : presentedResult ? "Wynik jest gotowy — znajdziesz go powyżej." : "Nie udało się przygotować odpowiedzi na podstawie dostępnych danych.";
+          pendingText = "Nie udało się przygotować odpowiedzi na podstawie dostępnych danych.";
           flushText();
         }
 
@@ -313,7 +302,7 @@ export async function POST(request: NextRequest) {
           try {
             const assistant = await persistAssistant();
             if (assistant && prepared) {
-              console.warn("Agent stopped after returning a partial response", error);
+              console.warn("Chat stopped after returning a partial response", error);
               push(
                 {
                   type: "done",

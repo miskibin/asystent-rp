@@ -22,6 +22,8 @@ export const useChatLogic = () => {
   const versionRef = useRef(0);
   const activeRef = useRef<string | null>(null);
   const busyRef = useRef(false);
+  const conversationCache = useRef(new Map<string, Message[]>());
+  const loadedThreadRef = useRef<string | null>(null);
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadIdState] = useState<string | null>(null);
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
@@ -53,16 +55,28 @@ export const useChatLogic = () => {
     setThreads((current) => sortChatThreads([thread, ...current.filter((item) => item.id !== thread.id)]).slice(0, 50));
   }, []);
   const switchThread = useCallback(async (threadId: string) => {
+    if (activeRef.current === threadId) return;
+    if (activeRef.current) {
+      if (busyRef.current) conversationCache.current.delete(activeRef.current);
+      else if (loadedThreadRef.current === activeRef.current) conversationCache.current.set(activeRef.current, useChatStore.getState().messages);
+    }
     stopGenerating();
     const version = ++versionRef.current;
     setActiveThreadId(threadId);
-    setIsConversationLoading(true);
+    const cached = conversationCache.current.get(threadId);
+    loadedThreadRef.current = cached ? threadId : null;
+    setIsConversationLoading(!cached);
     setErrorMessage(null);
     setEditingMessageId(null);
-    setMessages([]);
+    setMessages(cached ?? []);
+    if (cached) return;
     try {
       const loaded = await loadChatMessages(supabase, threadId);
-      if (versionRef.current === version) setMessages(loaded);
+      if (versionRef.current === version) {
+        loadedThreadRef.current = threadId;
+        conversationCache.current.set(threadId, loaded);
+        setMessages(loaded);
+      }
     } catch (error) {
       if (versionRef.current === version) handleError(error);
     } finally {
@@ -70,7 +84,12 @@ export const useChatLogic = () => {
     }
   }, [handleError, setActiveThreadId, setMessages, stopGenerating, supabase]);
   const newThread = useCallback(() => {
+    if (activeRef.current) {
+      if (busyRef.current) conversationCache.current.delete(activeRef.current);
+      else if (loadedThreadRef.current === activeRef.current) conversationCache.current.set(activeRef.current, useChatStore.getState().messages);
+    }
     stopGenerating();
+    loadedThreadRef.current = null;
     setActiveThreadId(null);
     setIsConversationLoading(false);
     setEditingMessageId(null);
@@ -121,6 +140,7 @@ export const useChatLogic = () => {
         (event) => {
           if (!current()) return;
           setActiveThreadId(event.threadId);
+          loadedThreadRef.current = event.threadId;
           if (userId && event.userMessageId) replaceMessageId(userId, event.userMessageId);
           upsertThread({ id: event.thread.id, title: event.thread.title,
             createdAt: event.thread.created_at, updatedAt: event.thread.updated_at,
@@ -149,7 +169,7 @@ export const useChatLogic = () => {
     const state = useChatStore.getState();
     if (busyRef.current || isConversationLoading || isThreadsLoading) return false;
     const result = chatRequestSchema.safeParse({ action: "send", threadId: activeRef.current ?? undefined,
-      content: (text ?? state.input).trim(), documents, mode: state.mode });
+      content: (text ?? state.input).trim(), documents });
     if (!result.success) { handleError(new Error("Wiadomość: maks. 4000 znaków. Załączniki: do 3 plików tekstowych, łącznie 12000 znaków.")); return false; }
     const user = { id: generateUniqueId(), role: "user" as const, content: result.data.action === "send" ? result.data.content : "", documents };
     const assistant = { id: generateUniqueId(), role: "assistant" as const, content: "" };
@@ -161,7 +181,7 @@ export const useChatLogic = () => {
     const state = useChatStore.getState();
     const index = state.messages.findIndex((message) => message.id === id && message.role === "user");
     if (!activeRef.current || index < 0 || busyRef.current) return;
-    const parsed = chatRequestSchema.safeParse({ action: "edit", threadId: activeRef.current, messageId: id, content, mode: state.mode });
+    const parsed = chatRequestSchema.safeParse({ action: "edit", threadId: activeRef.current, messageId: id, content });
     if (!parsed.success) { handleError(new Error("Podaj od 1 do 4000 znaków.")); return; }
     const assistant: Message = { id: generateUniqueId(), role: "assistant", content: "" };
     setMessages([...state.messages.slice(0, index), { ...state.messages[index], content: content.trim() }, assistant]);
@@ -174,7 +194,7 @@ export const useChatLogic = () => {
     if (!activeRef.current || index < 0 || busyRef.current) return;
     const assistant: Message = { id: generateUniqueId(), role: "assistant", content: "" };
     setMessages([...state.messages.slice(0, index), assistant]);
-    await run({ action: "regenerate", threadId: activeRef.current, messageId: id, mode: state.mode }, assistant.id);
+    await run({ action: "regenerate", threadId: activeRef.current, messageId: id }, assistant.id);
   }, [run, setMessages]);
   const deleteMessage = useCallback((id: string) => {
     if (busyRef.current) return;
@@ -185,12 +205,13 @@ export const useChatLogic = () => {
     try {
       const { error } = await supabase.from("chat_threads").delete().in("id", ids);
       if (error) throw error;
+      for (const id of ids) conversationCache.current.delete(id);
       setThreads((current) => current.filter((thread) => !ids.includes(thread.id)));
     } catch (error) { handleError(error); }
   }, [handleError, newThread, supabase]);
   const deleteThread = useCallback(async (id: string) => {
     if (activeRef.current === id) newThread();
-    try { await deleteChatThread(supabase, id); setThreads((current) => current.filter((thread) => thread.id !== id)); }
+    try { await deleteChatThread(supabase, id); conversationCache.current.delete(id); setThreads((current) => current.filter((thread) => thread.id !== id)); }
     catch (error) { handleError(error); }
   }, [handleError, newThread, supabase]);
   const renameThread = useCallback(async (id: string, title: string) => {

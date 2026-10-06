@@ -1,5 +1,6 @@
+import { FaGithub as Github, FaYoutube as Youtube } from "react-icons/fa";
 import React from "react";
-import { Github, Heart, Youtube, Mail, ExternalLink } from "lucide-react";
+import { Heart, Mail, ExternalLink } from "lucide-react";
 import { FaDiscord } from "react-icons/fa";
 
 export default function Footer() {

@@ -1,15 +1,18 @@
-import * as React from "react";
+import * as React from "react"
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"
 
 export type ChatEmptyStateProps = React.ComponentProps<"section"> & {
-  title: React.ReactNode;
-  description?: React.ReactNode;
-  icon?: React.ReactNode;
-  children?: React.ReactNode;
-};
+  title: React.ReactNode
+  description?: React.ReactNode
+  icon?: React.ReactNode
+  children?: React.ReactNode
+}
 
-/** Copied from miskibin/chat-components: a host-owned empty conversation. */
+/**
+ * A calm starting point for a conversation. The host supplies the copy,
+ * optional mark, and any suggested actions without giving up the layout.
+ */
 export function ChatEmptyState({
   title,
   description,
@@ -55,5 +58,5 @@ export function ChatEmptyState({
         </div>
       ) : null}
     </section>
-  );
+  )
 }

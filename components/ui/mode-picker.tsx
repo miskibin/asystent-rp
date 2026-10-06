@@ -14,12 +14,15 @@ import { cn } from "@/lib/utils"
 
 export type ChatMode = "ask" | "plan" | "agent"
 
-export const CHAT_MODES: {
+export type ChatModeOption = {
   id: ChatMode
   name: string
   description: string
-  icon: typeof Bot
-}[] = [
+  /** Defaults to the standard icon for this mode. */
+  icon?: typeof Bot
+}
+
+export const CHAT_MODES: ChatModeOption[] = [
   {
     id: "ask",
     name: "Ask",
@@ -41,6 +44,10 @@ export const CHAT_MODES: {
 ]
 
 export type ModePickerProps = {
+  /** Consumer wording; does not change the host's permission enforcement. */
+  modes?: ChatModeOption[]
+  label?: string
+  triggerLabel?: string
   value?: ChatMode
   defaultValue?: ChatMode
   onChange?: (mode: ChatMode) => void
@@ -51,6 +58,9 @@ export type ModePickerProps = {
 }
 
 export function ModePicker({
+  modes = CHAT_MODES,
+  label = "Mode",
+  triggerLabel = "Change mode",
   value,
   defaultValue = "agent",
   onChange,
@@ -61,8 +71,9 @@ export function ModePicker({
   const [internal, setInternal] = React.useState<ChatMode>(defaultValue)
   const selectedId = value ?? internal
   const current =
-    CHAT_MODES.find((m) => m.id === selectedId) ?? CHAT_MODES[2]
-  const Icon = current.icon
+    modes.find((m) => m.id === selectedId) ?? modes[0]
+  const fallbackIcon = CHAT_MODES.find((mode) => mode.id === current?.id)?.icon ?? Bot
+  const Icon = current?.icon ?? fallbackIcon
 
   const pick = React.useCallback(
     (mode: ChatMode) => {
@@ -78,15 +89,16 @@ export function ModePicker({
         <button
           type="button"
           data-slot="mode-picker-trigger"
-          disabled={disabled}
-          title="Change mode"
+          disabled={disabled || modes.length === 0}
+          title={triggerLabel}
+          aria-label={triggerLabel}
           className={cn(
             "group inline-flex h-9 max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-muted data-[state=open]:text-foreground sm:h-7 [&_svg]:pointer-events-none [&_svg]:shrink-0",
             className
           )}
         >
           <Icon className="size-3.5" />
-          <span className="truncate">{current.name}</span>
+          <span className="truncate">{current?.name ?? label}</span>
           <ChevronDown className="size-3 opacity-60 transition-transform duration-150 group-data-[state=open]:rotate-180" />
         </button>
       </DropdownMenuTrigger>
@@ -99,10 +111,10 @@ export function ModePicker({
         className="w-[min(16rem,calc((100vw-1.5rem)/var(--ui-scale,1)))]"
       >
         <DropdownMenuLabel className="px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          Mode
+          {label}
         </DropdownMenuLabel>
-        {CHAT_MODES.map((mode) => {
-          const ModeIcon = mode.icon
+        {modes.map((mode) => {
+          const ModeIcon = mode.icon ?? CHAT_MODES.find((option) => option.id === mode.id)?.icon ?? Bot
           const selected = mode.id === selectedId
           return (
             <DropdownMenuItem

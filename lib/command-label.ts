@@ -1,3 +1,21 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * The program a shell command actually runs, for a tool row's headline.
+ *
+ * A headline built by splitting on spaces says "Ran if" for
+ * `if [ -f x ]; then npm test; fi`, and "Ran sudo" for anything privileged.
+ * This is the real thing: a shell tokenizer that understands quoting,
+ * escapes, `$(…)`, backticks, heredocs, redirections, comments and line
+ * continuations, walks past the wrappers that are setup rather than work
+ * (`env`, `sudo`, `nohup`, `timeout`, `bundle exec`, `command`/`builtin`/
+ * `exec`, `cmd /c`, `powershell -Command`, `sh -lc`), skips shell builtins
+ * and keywords that would make a misleading label, and follows `&&`, `;` and
+ * pipelines to the first segment that names a program.
+ *
+ * Returns null when nothing in the command reads as a program name — the
+ * caller should say "command" rather than guess.
+ */
+
 type CommandWrapper = "env" | "sudo";
 type CommandProgramContext = "exec" | "shell";
 

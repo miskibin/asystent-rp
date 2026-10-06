@@ -1,3 +1,13 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * CommonMark reads four or more spaces after a list marker as an indented code
+ * block. In an agent's output that spacing is almost always accidental
+ * alignment — `-       text` — and the reader gets a full code card for every
+ * bullet. This re-parses only the blocks that keep excess indentation *and*
+ * start on the marker's own line; explicit fences and ordinary indented blocks
+ * stay code.
+ */
+
 type MarkdownPosition = { start?: { line?: number; offset?: number } }
 
 type MarkdownAstNode = {

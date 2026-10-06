@@ -2,33 +2,9 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { useChatLogic } from "@/hooks/useChatLogic";
-import type { Message } from "@/lib/types";
-import type { ChatThread } from "@/lib/chat-persistence";
 import { useChatStore } from "@/lib/store";
 
-interface ChatContextType {
-  messages: Message[];
-  threads: ChatThread[];
-  activeThreadId: string | null;
-  isThreadsLoading: boolean;
-  deleteMessage: (id: string) => void;
-  clearMessages: () => void;
-  input: string;
-  setInput: (input: string) => void;
-  isLoading: boolean;
-  status: string | null;
-  errorMessage: string | null;
-  clearError: () => void;
-  handleSubmit: (event: React.FormEvent, text?: string) => Promise<void>;
-  stopGenerating: () => void;
-  editingMessageId: string | null;
-  setEditingMessageId: React.Dispatch<React.SetStateAction<string | null>>;
-  editMessage: (id: string, content: string) => Promise<void>;
-  regenerateMessage: (id: string) => Promise<void>;
-  newThread: () => void;
-  switchThread: (id: string) => Promise<void>;
-  deleteThread: (id: string) => Promise<void>;
-}
+type ChatContextType = ReturnType<typeof useChatLogic> & ReturnType<typeof useChatStore.getState>;
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 

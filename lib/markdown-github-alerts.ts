@@ -1,3 +1,16 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * GitHub's blockquote alerts: a quote whose first line is `[!NOTE]` — or TIP,
+ * IMPORTANT, WARNING, CAUTION — renders as a titled callout. They are
+ * GitHub's own extension rather than GFM, so remark-gfm leaves the marker as
+ * literal text inside the quote. This lifts it off the mdast into a
+ * `data-alert` attribute for the blockquote renderer to style, and removes
+ * the marker line itself.
+ *
+ * Only a marker with nothing after it on its own line counts, which is
+ * GitHub's rule: `> [!NOTE] aside` is an ordinary quote.
+ */
+
 type MarkdownAstNode = {
   type?: string
   value?: unknown

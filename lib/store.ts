@@ -1,3 +1,4 @@
+import type { ChatMode } from "./chat-request";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ChatOptions, ChatPlugin, Message, Model } from "./types";
@@ -11,6 +12,8 @@ interface ChatState {
   patrons: string[];
   models: Model[];
   selectedModel: string;
+  mode: ChatMode;
+  setMode: (mode: ChatMode) => void;
   addMessage: (message: Message) => void;
   setMessages: (messages: Message[]) => void;
   updateMessage: (id: string, message: Message) => void;
@@ -52,6 +55,8 @@ export const useChatStore = create<ChatState>()(
       patrons: [],
       models: [model],
       selectedModel: model.name,
+      mode: "agent",
+      setMode: (mode) => set({ mode }),
       addMessage: (message) =>
         set((state) => ({
           messages: [...state.messages, { ...message, artifacts: message.artifacts || [] }],
@@ -93,6 +98,7 @@ export const useChatStore = create<ChatState>()(
       version: 2,
       partialize: (state) => ({
         options: state.options,
+        mode: state.mode,
       }),
       migrate: (persisted) => {
         const previous = persisted as Partial<ChatState>;

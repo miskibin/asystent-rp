@@ -1,3 +1,16 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * A cache for things whose *size* matters as much as their count. Highlighted
+ * code is the case it exists for: 200 entries of a three-line snippet is
+ * nothing, and 200 entries of a 4000-line file is a hundred megabytes of HTML
+ * held for a transcript nobody is looking at any more. So both bounds are
+ * enforced — the oldest entries leave until the new one fits under the entry
+ * count *and* the byte budget — and an entry larger than the whole budget is
+ * simply not stored rather than emptying the cache to make room for itself.
+ *
+ * Sizes are approximate on purpose: a caller passes what it can measure
+ * cheaply (string length, a multiple of it), never a real heap measurement.
+ */
 type CacheEntry<T> = { value: T; approximateSize: number }
 
 export class LRUCache<T> {

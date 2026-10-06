@@ -1,3 +1,15 @@
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * Turns a DOM selection inside rendered markdown back into markdown source, so
+ * highlight-and-copy out of an answer keeps its links, emphasis, lists, fences
+ * and tables instead of flattening to a wall of plain text. The `text/plain`
+ * flavour carries the markdown; `text/html` carries a sanitized copy of the
+ * rendered fragment for rich-paste targets.
+ *
+ * Nothing here reads React state — it walks the DOM the renderer produced, so
+ * it costs nothing until someone actually copies.
+ */
+
 const SKIPPED_TAGS = new Set(["BUTTON", "INPUT", "SCRIPT", "STYLE", "TEMPLATE"])
 const SKIPPED_CLASS_NAMES = ["select-none", "sr-only"]
 /** Chrome the renderer draws — a copy button, an icon — never content. */

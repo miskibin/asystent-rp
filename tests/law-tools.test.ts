@@ -55,6 +55,8 @@ describe("Shared legal retrieval", () => {
     const result = JSON.parse(await readLaw("/api/prawo/search", { q: "private question" }));
     expect(warn).toHaveBeenCalledWith("Legal retrieval failed", expect.objectContaining({ path: "/api/prawo/search", status: 403, mitigation: "challenge" }));
     expect(JSON.stringify(warn.mock.calls)).not.toContain("private");
+    expect(result.error).toContain("zablokował odczyt");
+    expect(result.error).not.toContain("niedostępna");
     expect(result.answerable).toBe(false);
   });
   it("handoff transfers exact IDs/date as an unsent draft and ignores arbitrary prompts", () => {

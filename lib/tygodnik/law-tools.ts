@@ -28,10 +28,10 @@ export async function readLaw(path: string, query: Record<string, string | undef
   const url = new URL(path, base);
   for (const [key, value] of Object.entries(query)) if (value) url.searchParams.set(key, value);
   try {
-    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000) });
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000), headers: { Accept: "application/json", "User-Agent": "Asystent-RP/1.0 (+https://chat.tygodniksejmowy.pl)" } });
     if (!response.ok) {
       console.warn("Legal retrieval failed", { path, status: response.status, contentType: response.headers.get("content-type"), mitigation: response.headers.get("cf-mitigated"), ray: response.headers.get("cf-ray") });
-      return legalToolJson({ error: response.status === 400 ? "Nieprawidłowe parametry wyszukiwania przepisu." : response.status === 404 ? "Nie znaleziono wersji przepisu." : response.status === 409 ? "Wskazana jednostka należy do innej wersji dokumentu." : "Baza prawa jest chwilowo niedostępna.", answerable: false, reason: "retrieval_http_error" });
+      return legalToolJson({ error: response.status === 400 ? "Nieprawidłowe parametry wyszukiwania przepisu." : response.status === 403 ? "Serwer źródeł zablokował odczyt przepisów." : response.status === 404 ? "Nie znaleziono wersji przepisu." : response.status === 409 ? "Wskazana jednostka należy do innej wersji dokumentu." : "Baza prawa jest chwilowo niedostępna.", answerable: false, reason: "retrieval_http_error" });
     }
     const body = await response.json();
     return legalToolJson(body);

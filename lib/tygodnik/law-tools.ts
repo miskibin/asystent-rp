@@ -29,10 +29,17 @@ export async function readLaw(path: string, query: Record<string, string | undef
   for (const [key, value] of Object.entries(query)) if (value) url.searchParams.set(key, value);
   try {
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000) });
-    if (!response.ok) return legalToolJson({ error: response.status === 404 ? "Nie znaleziono wersji przepisu." : response.status === 409 ? "Wskazana jednostka należy do innej wersji dokumentu." : "Baza prawa jest chwilowo niedostępna.", answerable: false });
+    if (!response.ok) {
+      console.warn("Legal retrieval failed", { path, status: response.status, contentType: response.headers.get("content-type"), mitigation: response.headers.get("cf-mitigated"), ray: response.headers.get("cf-ray") });
+      return legalToolJson({ error: response.status === 400 ? "Nieprawidłowe parametry wyszukiwania przepisu." : response.status === 404 ? "Nie znaleziono wersji przepisu." : response.status === 409 ? "Wskazana jednostka należy do innej wersji dokumentu." : "Baza prawa jest chwilowo niedostępna.", answerable: false, reason: "retrieval_http_error" });
+    }
     const body = await response.json();
     return legalToolJson(body);
-  } catch { return legalToolJson({ error: "Baza prawa jest chwilowo niedostępna.", answerable: false }); }
+  } catch (error) {
+    const cause = error instanceof Error ? (error as Error & { cause?: { code?: string } }).cause : undefined;
+    console.warn("Legal retrieval failed", { path, error: error instanceof Error ? error.name : "UnknownError", code: cause?.code });
+    return legalToolJson({ error: "Baza prawa jest chwilowo niedostępna.", answerable: false, reason: "retrieval_transport_error" });
+  }
 }
 
 export const searchLegalProvisions = tool(

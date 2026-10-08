@@ -1,5 +1,13 @@
 # Asystent RP
 
+## Wspólne przepisy prawa
+
+Narzędzia `search_legal_provisions`, `get_legal_provision` i `get_legal_changes` korzystają z `/api/prawo/*` Tygodnika, zachowując pełne jednostki, identyfikatory wersji, datę i źródła. `TYGODNIK_LAW_URL` może wskazać podgląd tego samego kontraktu. Przepisy omijają ogólny limit 700 znaków; przekroczenie budżetu odrzuca całe jednostki i blokuje odpowiedź.
+
+Niepotwierdzona aktualność lub niekompletny kontekst zatrzymują generowanie porady po odczycie i zwracają sprawdzalne ograniczenie z odnośnikami. Model nie może zastąpić odmowy kolejną odpowiedzią z pamięci. Identyfikator wersji jest obowiązkowy przy pobieraniu wskazanej jednostki; API odrzuca rozbieżność. Cytowania zachowują dokładne kotwice artykułów. Przekazanie z widoku „Prawo” przygotowuje niewysłany szkic i przenosi go przez powrót z logowania.
+
+Integracja wymaga wdrożonego kontraktu Tygodnika. Pierwszy import ma niepotwierdzoną aktualność, więc nie jest jeszcze podstawą odpowiedzi o obowiązującym prawie. Odbiór wymaga sprawdzenia tekstów, zależności i kontekstu oraz zaakceptowanego przez człowieka zbioru pytań. Testy jednostkowe i przeglądarkowe sprawdzają działanie kontraktu; nie zastępują odbioru jakości prawnej.
+
 [Asystent RP](https://chat.tygodniksejmowy.pl/) pomaga analizować dane Sejmu, ustawy, głosowania i wypowiedzi oraz przygotowywać robocze pisma. Odpowiedzi powstają z użyciem DeepSeek i narzędzi odczytujących dane Tygodnika Sejmowego. Logowanie, rozmowy i uprawnienia użytkowników obsługuje Supabase.
 
 ## Interfejs chat-components

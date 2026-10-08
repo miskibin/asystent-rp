@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import type { z } from "zod";
 import { chatRequestSchema, documentContext, documentsSchema } from "@/lib/chat-request";
 import { SEJM_DATA_TOOL_NAMES } from "@/lib/tygodnik/tools";
+import { LAW_DATA_TOOLS } from "@/lib/tygodnik/law-tools";
+
+const DATA_TOOL_NAMES: readonly string[] = [...SEJM_DATA_TOOL_NAMES, ...LAW_DATA_TOOLS.map(tool => tool.name)];
 
 import { streamDeepSeek } from "@/lib/deepseek-chat";
 import {
@@ -242,8 +245,8 @@ export async function POST(request: NextRequest) {
           }
 
           if (event.type === "tool_start" || event.type === "tool_update") {
-            if (SEJM_DATA_TOOL_NAMES.some((name) => name === event.name)) usedDataTool = true;
-            flushText();
+            if (DATA_TOOL_NAMES.some((name) => name === event.name)) { usedDataTool = true; pendingText = ""; }
+            else flushText();
             const tool: ChatToolStep = {
               id: event.id,
               name: displayToolName(event.name),
@@ -258,8 +261,9 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          if (SEJM_DATA_TOOL_NAMES.some((name) => name === event.name)) {
+          if (DATA_TOOL_NAMES.some((name) => name === event.name)) {
             usedDataTool = true;
+            pendingText = "";
             for (const url of collectHttpUrlsFromToolOutput(event.output)) allowedUrls.add(url);
           }
           const existingPart = parts.find((part) => part.type === "tool" && part.tool.id === event.id);

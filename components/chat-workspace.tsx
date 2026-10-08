@@ -17,6 +17,7 @@ import { USER_MESSAGE_CHAR_LIMIT } from "@/lib/chat-persistence"
 import { createClientComponentClient } from "@/lib/supabase/client"
 import { useChatStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { LAW_HANDOFF_STORAGE, lawDraft } from "@/lib/law-handoff"
 
 const SUGGESTIONS = [
   { id: "sitting", label: "Co wydarzyło się na ostatnim posiedzeniu Sejmu?" },
@@ -100,6 +101,15 @@ export function ChatWorkspace() {
     setMobileOpen(false)
   }, [])
   const newChat = React.useCallback(() => { resetComposer(); newThread(); requestAnimationFrame(() => composerRef.current?.focus()) }, [newThread, resetComposer])
+  const lawHandoffApplied = React.useRef(false)
+  React.useEffect(() => {
+    if (lawHandoffApplied.current || isThreadsLoading || isConversationLoading) return
+    const text = lawDraft(new URLSearchParams(window.location.search))
+    lawHandoffApplied.current = true
+    if (!text) return
+    newThread()
+    requestAnimationFrame(() => { composerRef.current?.setDraft({ text, files: [], skills: [] }); composerRef.current?.focus(); try { sessionStorage.removeItem(LAW_HANDOFF_STORAGE) } catch { /* Storage may be blocked. */ } })
+  }, [isThreadsLoading, isConversationLoading, newThread])
   const selectChat = React.useCallback((id: string) => { resetComposer(); void switchThread(id) }, [resetComposer, switchThread])
   const send = React.useCallback(async (payload: ChatInputPayload) => {
     if (busy || preparingRef.current) return

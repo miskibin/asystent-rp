@@ -28,6 +28,17 @@ beforeEach(() => { state.events = []; state.inserts = []; state.history = []; st
 const request = (body: unknown) => new NextRequest("http://localhost/api/chat", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
 
 describe("chat route integration", () => {
+  it("drops unsupported model prefaces before legal retrieval", async () => {
+    state.events = [
+      { type: "text", content: "Na pewno obowiązuje." },
+      { type: "tool_start", id: "law", name: "search_legal_provisions", input: "{}" },
+      { type: "tool_end", id: "law", name: "search_legal_provisions", status: "done", output: '{"answerable":false}' },
+      { type: "text", content: "Nie mogę potwierdzić obowiązującego brzmienia." },
+    ];
+    const stream = await (await POST(request({ action: "send", content: "Czy to obowiązuje?" }))).text();
+    expect(stream).not.toContain("Na pewno obowiązuje");
+    expect(state.inserts.find(entry => entry.data.role === "assistant")?.data.content).toBe("Nie mogę potwierdzić obowiązującego brzmienia.");
+  });
   it("persists attachments separately while including their content in model history", async () => {
     state.events = [{ type: "text", content: "Odpowiedź" }];
     const response = await POST(request({ action: "send", content: "Wyjaśnij", documents: [{ name: "projekt.md", content: "Artykuł 1." }] }));

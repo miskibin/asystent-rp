@@ -8,6 +8,13 @@ import {
 } from "../lib/grounded-response";
 
 describe("grounded assistant output", () => {
+  it("preserves the exact provision anchor and rejects another article in the same version", () => {
+    const prefix = "https://tygodniksejmowy.pl/prawo/DU/2014/827?version=" + "a".repeat(64);
+    const allowed = collectHttpUrlsFromToolOutput(JSON.stringify({ url: prefix + "#art-27" }));
+    const result = keepOnlyGroundedLinks(`[Artykuł](${prefix}#art-27) [Inny](${prefix}#art-38)`, allowed);
+    expect(result).toContain("#art-27");
+    expect(result).not.toContain("#art-38");
+  });
   it("keeps exact tool URLs and removes invented destinations", () => {
     const allowed = collectHttpUrlsFromToolOutput(
       JSON.stringify({ url: "https://tygodniksejmowy.pl/glosowanie/123" })

@@ -8,6 +8,7 @@ import { ChatProvider } from "./ChatContext";
 import { ChatWorkspace } from "@/components/chat-workspace";
 import { createClientComponentClient } from "@/lib/supabase/client";
 import LoginPage, { type AuthProvider } from "@/components/landing-page";
+import { LAW_HANDOFF_STORAGE, lawHandoffQuery } from "@/lib/law-handoff";
 
 export default function Home() {
   const supabase = useMemo(() => createClientComponentClient(), []);
@@ -15,6 +16,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    try {
+      const incoming = lawHandoffQuery(new URLSearchParams(window.location.search));
+      if (incoming) sessionStorage.setItem(LAW_HANDOFF_STORAGE, incoming);
+      else {
+        const restored = lawHandoffQuery(new URLSearchParams(sessionStorage.getItem(LAW_HANDOFF_STORAGE) ?? ""));
+        if (restored) window.history.replaceState(null, "", `/?${restored}`);
+      }
+    } catch { /* Authentication remains available when browser storage is blocked. */ }
     void supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
       setLoading(false);

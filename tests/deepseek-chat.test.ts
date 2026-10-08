@@ -1,8 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { AIMessage, AIMessageChunk, HumanMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import { ChatOpenAI } from "@langchain/openai";
-const state = vi.hoisted(() => ({ invoke: vi.fn() }));
+const state = vi.hoisted(() => ({ invoke: vi.fn(), lawInvoke: vi.fn() }));
 vi.mock("../lib/tygodnik/tools", () => ({ SEJM_DATA_TOOLS: [{ name: "search_sejm_data", invoke: state.invoke }] }));
+vi.mock("../lib/tygodnik/law-tools", async (importOriginal) => ({ ...await importOriginal<object>(), LAW_DATA_TOOLS: [{ name: "search_legal_provisions", invoke: state.lawInvoke }] }));
 import { createDeepSeekModel, streamDeepSeek, toLangChainMessages } from "../lib/deepseek-chat";
 
 const question = [{ id: "u", role: "user" as const, content: "Co uchwalono?" }];
@@ -30,6 +31,20 @@ beforeEach(() => { process.env.DEEPSEEK_API_KEY = "test-key"; state.invoke.mockR
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("simple DeepSeek chat", () => {
+  it("refuses unverified law before another model call can invent applicability", async () => {
+    const model = mockModel([[search("law", "search_legal_provisions")], [new AIMessageChunk("To na pewno obowiązuje.")]]);
+    state.lawInvoke.mockResolvedValue(JSON.stringify({ answerable: false, context_complete: false, items: [{ label: "Art. 27", url: "https://tygodniksejmowy.pl/prawo/DU/2014/827#art-27" }] }));
+    const result = await events();
+    expect(model.bound).toHaveBeenCalledTimes(1);
+    expect(result.at(-1)).toMatchObject({ type: "text", content: expect.stringContaining("Nie mogę potwierdzić") });
+    expect(JSON.stringify(result)).not.toContain("na pewno obowiązuje");
+  });
+  it("answers law from a qualified version and complete context", async () => {
+    const model = mockModel([[search("law", "search_legal_provisions")], [new AIMessageChunk("Odpowiedź oparta na potwierdzonej wersji.")]]);
+    state.lawInvoke.mockResolvedValue(JSON.stringify({ answerable: true, context_complete: true }));
+    expect((await events()).at(-1)).toMatchObject({ content: "Odpowiedź oparta na potwierdzonej wersji." });
+    expect(model.bound).toHaveBeenCalledTimes(2);
+  });
   it("streams an ordinary answer without calling retrieval", async () => {
     const model = mockModel([[new AIMessageChunk("Cześć!")]]);
     expect(await events()).toEqual([{ type: "text", content: "Cześć!" }]);

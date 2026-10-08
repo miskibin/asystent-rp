@@ -5,7 +5,6 @@ function normalizedUrl(value: string) {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    url.hash = "";
     return url.toString().replace(/\/$/, "");
   } catch {
     return null;
@@ -74,6 +73,9 @@ export function summarizeToolOutput(name: string, output: string): string {
 }
 
 export function displayToolName(name: string): string {
+  if (name === "search_legal_provisions") return "Wyszukiwanie przepisów prawa";
+  if (name === "get_legal_provision") return "Sprawdzanie wersji przepisu";
+  if (name === "get_legal_changes") return "Sprawdzanie zmian i zakresu prawa";
   if (name === "get_latest_sejm_sitting") return "Sprawdzanie ostatniego posiedzenia Sejmu";
   if (name === "search_sejm_data") return "Wyszukiwanie w danych Sejmu";
   if (name === "get_sejm_record") return "Pobieranie szczegółów z danych Sejmu";

@@ -4,7 +4,7 @@ const THREAD_ID = "22222222-2222-4222-8222-222222222222";
 const user = { id: USER_ID, aud: "authenticated", role: "authenticated", email: "test@example.invalid", app_metadata: {}, user_metadata: {}, created_at: "2026-10-06T00:00:00Z" };
 const thread = { id: THREAD_ID, title: "Testowa rozmowa", created_at: "2026-10-06T00:00:00Z", updated_at: "2026-10-06T00:00:00Z", pinned: false, sort_order: 0 };
 
-async function mockChat(page: Page, initialMessages: unknown[] = [], responseDelay = 250, secondThread = false) {
+async function mockChat(page: Page, initialMessages: unknown[] = [], responseDelay = 250, secondThread = false, initialPath = "/") {
   const requests: Record<string, unknown>[] = [];
   const messageLoads: string[] = [];
   const mutations: { method: string; path: string; body: unknown }[] = [];
@@ -41,10 +41,22 @@ async function mockChat(page: Page, initialMessages: unknown[] = [], responseDel
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await page.goto(initialPath);
   await expect(page.locator('[data-slot="chat-input-textarea"]')).toBeEnabled();
   return { requests, mutations, errors, messageLoads };
 }
+
+test("law handoff survives sign-in return as an exact unsent draft", async ({ page }) => {
+  const query = new URLSearchParams({ law_unit: "a".repeat(64), law_version: "b".repeat(64), law_date: "2026-10-08" }).toString();
+  const { requests, errors } = await mockChat(page);
+  await page.evaluate(value => sessionStorage.setItem("asystent-rp-law-handoff", value), query);
+  await page.goto("/");
+  const input = page.locator('[data-slot="chat-input-textarea"]');
+  await expect(input).toHaveValue(new RegExp("a{64}.*b{64}.*2026-10-08"));
+  expect(requests).toHaveLength(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("asystent-rp-law-handoff"))).toBeNull();
+  expect(errors).toEqual([]);
+});
 
 test("simple chat preserves literal input and attachments, shows sources and has no navbar or harness", async ({ page }) => {
   const { requests, mutations, errors } = await mockChat(page);

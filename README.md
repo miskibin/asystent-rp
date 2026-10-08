@@ -17,11 +17,12 @@ Integracja wymaga wdrożonego kontraktu Tygodnika. Pierwszy import ma niepotwier
 Interfejs korzysta z komponentów źródłowych [miskibin/chat-components](https://github.com/miskibin/chat-components), zgodnie z modelem dystrybucji registry tej biblioteki. Pochodzenie oraz SHA-256 plików zapisuje `chat-components.lock.json`; pliki biblioteki pozostają identyczne z upstreamem, a integracja aplikacji znajduje się w `components/chat-workspace.tsx`.
 
 - Rozmowy: tytuł i data w dwóch wierszach, wyszukiwanie, zmiana nazwy, usuwanie oraz zwijany panel ze zmianą szerokości. Odwiedzone rozmowy są przechowywane w pamięci sesji; pierwsze otwarcie pokazuje stan ładowania.
-- Edytor wiadomości: wiele wierszy, niewielkie załączniki tekstowe i zatrzymywanie odpowiedzi.
+- Edytor wiadomości: wiele wierszy, niewielkie załączniki tekstowe i ikonowe przyciski wysłania oraz zatrzymania odpowiedzi.
 - Wiadomości: Markdown, tabele, kod, matematyka, Mermaid, kopiowanie, edycja, ponowne generowanie i źródła.
-- Pływający przycisk motywu, propozycje pytań w nowej rozmowie oraz mobilny panel rozmów i przycisk nowego czatu.
+- Motyw i wylogowanie w panelu rozmów, propozycje pytań w nowej rozmowie oraz mobilny panel rozmów i przycisk nowego czatu.
+- Strona logowania opisuje zastosowania Asystenta i udostępnia logowanie przez Google lub GitHub.
 
-To zwykły chatbot: interfejs nie udostępnia trybów agenta, planów, komend ani paneli pracy na dokumentach. Backend wywołuje model oraz trzy narzędzia odczytujące dane Sejmu, z limitem czterech wyszukiwań i pięciu wywołań modelu na odpowiedź. Doprecyzowanie i przygotowywane treści są częścią zwykłej rozmowy.
+Interfejs pokazuje rzeczywiste kroki pracy Asystenta: wyszukiwanie danych Sejmu, odczyt dokumentów i sprawdzanie przepisów. Kroki są rozwinięte podczas odpowiedzi, a po zakończeniu można je ponownie otworzyć. Zachowują się także w zapisanych rozmowach. Nie wyświetlamy wewnętrznego rozumowania modelu ani historycznych narzędzi prezentacyjnych. Backend wywołuje model oraz trzy narzędzia odczytujące dane Sejmu, z limitem czterech wyszukiwań i pięciu wywołań modelu na odpowiedź. Doprecyzowanie i przygotowywane treści są częścią zwykłej rozmowy.
 
 Backend obsługuje dokumenty tekstowe TXT, MD, CSV, JSON, XML, YAML i LOG: maksymalnie 3 pliki, łącznie 12 000 znaków. PDF, obrazy i pliki binarne wymagają osobnego mechanizmu ekstrakcji.
 

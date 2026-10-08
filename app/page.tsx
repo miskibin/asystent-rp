@@ -36,10 +36,11 @@ export default function Home() {
   }, [supabase]);
 
   const handleOAuthSignIn = async (provider: AuthProvider) => {
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
+    if (error) throw error;
   };
 
   if (loading) {

@@ -18,6 +18,7 @@ import { createClientComponentClient } from "@/lib/supabase/client"
 import { useChatStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { LAW_HANDOFF_STORAGE, lawDraft } from "@/lib/law-handoff"
+import { presentChatMessage } from "@/lib/chat-presentation"
 
 const SUGGESTIONS = [
   { id: "sitting", label: "Co wydarzyło się na ostatnim posiedzeniu Sejmu?" },
@@ -45,7 +46,7 @@ export function ChatWorkspace() {
   const router = useRouter()
   const supabase = React.useMemo(() => createClientComponentClient(), [])
   const { toast } = useToast()
-  const { messages, threads, activeThreadId, isThreadsLoading, isConversationLoading, isLoading,
+  const { messages, threads, activeThreadId, isThreadsLoading, isConversationLoading, isLoading, status,
     errorMessage, clearError, handleSubmit, stopGenerating, newThread, switchThread, deleteThread,
     renameThread, editMessage, regenerateMessage } = useChatContext()
   const desktop = useIsDesktop()
@@ -66,10 +67,8 @@ export function ChatWorkspace() {
     subtitle: new Date(thread.updatedAt).toLocaleString("pl-PL", { timeZone: "Europe/Warsaw", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
     status: thread.id === activeThreadId && isLoading ? "streaming" as const : "idle" as const,
   })), [activeThreadId, isLoading, search, threads])
-  // Historical presentation tools remain in storage; the chat displays ordinary messages only.
-  const chatMessages = React.useMemo<ChatMessageData[]>(() => messages.filter((message) => message.role !== "system").map((message) => ({
-    id: message.id, content: message.content, sender: message.role as "user" | "assistant",
-  })), [messages])
+  const chatMessages = React.useMemo<ChatMessageData[]>(() => messages.filter((message) => message.role !== "system")
+    .map((message, index, visible) => presentChatMessage(message, isLoading && index === visible.length - 1)), [isLoading, messages])
 
   React.useLayoutEffect(() => {
     if (!desktop) return
@@ -150,7 +149,7 @@ export function ChatWorkspace() {
     </div>
   }, [busy, messages, regenerateMessage, toast])
 
-  return <div className="relative flex h-dvh min-h-0 overflow-hidden bg-background">
+  return <div className="asystent-workspace relative flex h-dvh min-h-0 overflow-hidden bg-background">
     {drawerOpen ? <button type="button" aria-label="Zamknij panel rozmów" onClick={() => setMobileOpen(false)} className="absolute inset-0 z-40 bg-foreground/20 md:hidden" /> : null}
     <div ref={sidebarRef} data-chat-drawer role={drawerOpen ? "dialog" : undefined} aria-modal={drawerOpen || undefined} aria-label={drawerOpen ? "Rozmowy" : undefined} inert={!desktop && !drawerOpen}
       className={cn("z-50 h-full shrink-0 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:max-w-[calc(100vw-3rem)] max-md:shadow-xl md:relative", !drawerOpen && "max-md:hidden")}>
@@ -159,7 +158,7 @@ export function ChatWorkspace() {
         brand={<span className="px-1 text-[15px] font-semibold tracking-tight">Asystent RP</span>}
         nav={<SideRow icon={<Pencil className="size-4" />} onClick={newChat} className="min-h-11">Nowa rozmowa</SideRow>}
         rail={<SideIconBtn label="Nowa rozmowa" onClick={newChat} className="size-11"><Pencil className="size-4" /></SideIconBtn>}
-        footer={<button type="button" title="Wyloguj" aria-label="Wyloguj" onClick={() => void signOut()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded px-2 text-sm text-muted-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"><LogOut className="size-4" />{(!desktop || !collapsed) && "Wyloguj"}</button>}
+        footer={<div className={cn("flex items-center justify-between px-1", desktop && collapsed && "flex-col gap-1")}><button type="button" title="Wyloguj" aria-label="Wyloguj" onClick={() => void signOut()} className="grid size-10 place-items-center rounded-md text-muted-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"><LogOut className="size-4" /></button><ThemeToggle floating={false} aria-label="Zmień motyw" title="Zmień motyw" className="border-0 bg-transparent shadow-none" /></div>}
         collapseLabel={desktop ? "Zwiń panel" : "Zamknij rozmowy"} expandLabel="Otwórz panel">
         <label className="mb-3 flex items-center gap-2 rounded-md border px-2 text-muted-foreground"><Search className="size-4" /><input aria-label="Szukaj rozmów" placeholder="Szukaj rozmów" value={search} onChange={(event) => setSearch(event.target.value)} className="h-10 min-w-0 w-full bg-transparent text-sm outline-none" /></label>
         <ChatSidebarItemList items={sidebarItems} activeId={activeThreadId ?? undefined}
@@ -167,19 +166,18 @@ export function ChatWorkspace() {
       </ChatSidebar>
       {desktop && !collapsed ? <SidebarResizeRail targetRef={sidebarRef} onWidthChange={(width) => { try { localStorage.setItem("asystent-rp.sidebar-width", String(width)) } catch { /* Storage may be disabled. */ } }} label="Zmień szerokość panelu" /> : null}
     </div>
-    <main inert={drawerOpen} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-14">
-      <ThemeToggle aria-label="Zmień motyw" title="Zmień motyw" className="size-10" />
+    <main inert={drawerOpen} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-14 md:pt-6">
       <div className="absolute top-3 left-3 flex gap-1 md:hidden">
         <ActionButton label="Otwórz rozmowy" onClick={() => setMobileOpen(true)}><PanelLeft /></ActionButton>
         <ActionButton label="Nowa rozmowa" onClick={newChat}><Pencil /></ActionButton>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
-        {conversationLoading ? <div role="status" aria-label="Ładowanie rozmowy" className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Ładowanie rozmowy…</div> : <MessageList messages={chatMessages} conversationKey={activeThreadId ?? "new"} isGenerating={isLoading} generationStage={isLoading ? "thinking" : "idle"} generationLabel="Przygotowuję odpowiedź…"
+        {conversationLoading ? <div role="status" aria-label="Ładowanie rozmowy" className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Ładowanie rozmowy…</div> : <MessageList messages={chatMessages} conversationKey={activeThreadId ?? "new"} isGenerating={isLoading} generationStage={isLoading ? "thinking" : "idle"} generationLabel={status ?? "Przygotowuję odpowiedź…"}
           onEditMessage={busy ? undefined : (id, content) => void editMessage(id, content)} renderActions={renderActions}
           emptyState={newConversation ? <ChatEmptyState title="W czym mogę pomóc?" description="Zapytaj o Sejm, ustawy lub głosowania."><PromptSuggestions items={SUGGESTIONS} onSelect={(item) => void send({ text: item.label, files: [], skills: [] })} /></ChatEmptyState> : <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Ta rozmowa jest pusta.</div>} />}
         {errorMessage ? <div role="alert" className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2 text-sm text-destructive"><span className="flex-1">{errorMessage}</span><ActionButton label="Zamknij komunikat" onClick={clearError}><X /></ActionButton></div> : null}
         <ChatInput ref={composerRef} placeholder="Napisz wiadomość…" onSend={(payload) => void send(payload)} onStop={stopGenerating}
-          disabled={preparing || conversationLoading || drawerOpen} isGenerating={isLoading} className="pb-[max(0.75rem,env(safe-area-inset-bottom))]" />
+          disabled={preparing || conversationLoading || drawerOpen} isGenerating={isLoading} className="asystent-composer pb-[max(0.75rem,env(safe-area-inset-bottom))]" />
       </div>
     </main>
   </div>

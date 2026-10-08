@@ -12,7 +12,7 @@ const geistMono = localFont({ src: "./fonts/GeistMonoVF.woff", variable: "--font
 export const metadata: Metadata = {
   metadataBase: new URL("https://chat.tygodniksejmowy.pl"),
   title: "Asystent RP",
-  description: "Prosty asystent AI od Tygodnika Sejmowego.",
+  description: "Asystent AI od Tygodnika Sejmowego. Zapytaj o ustawy, głosowania i przepisy — z odnośnikami do źródeł.",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
 };

@@ -58,6 +58,68 @@ test("law handoff survives sign-in return as an exact unsent draft", async ({ pa
   expect(errors).toEqual([]);
 });
 
+test("login explains the assistant and keeps OAuth and theme controls accessible on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Zrozum Sejm.Zapytaj wprost.");
+  await expect(page.getByRole("button", { name: "Kontynuuj z Google" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Kontynuuj z GitHub" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "politykę prywatności" })).toHaveAttribute("href", "/privacy");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/asystent-login-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: "test-results/asystent-login-desktop.png", fullPage: true });
+  await page.getByRole("button", { name: "Zmień motyw" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.screenshot({ path: "test-results/asystent-login-dark.png", fullPage: true });
+  await page.route("https://placeholder.supabase.co/auth/v1/authorize**", route => route.fulfill({ contentType: "text/html", body: "OAuth test destination" }));
+  const callbackUrl = new URL("/auth/callback", page.url()).toString();
+  await page.getByRole("button", { name: "Kontynuuj z Google" }).click();
+  await expect(page).toHaveURL(/auth\/v1\/authorize\?provider=google/);
+  expect(new URL(page.url()).searchParams.get("redirect_to")).toBe(callbackUrl);
+});
+
+test("real retrieval steps appear while streaming and remain expandable after the answer", async ({ page }) => {
+  const { errors } = await mockChat(page);
+  await page.evaluate(() => {
+    const originalFetch = window.fetch;
+    window.fetch = (input, init) => {
+      if (input !== "/api/chat") return originalFetch(input, init);
+      return Promise.resolve(new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        (window as unknown as { traceController: ReadableStreamDefaultController<Uint8Array> }).traceController = controller;
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "tool_start", tool: { id: "live-search", name: "search_sejm_data", status: "running", input: '{"query":"Sejm"}' } })}\n\n`));
+      } }), { headers: { "Content-Type": "text/event-stream" } }));
+    };
+  });
+  const send = page.locator('[data-slot="chat-input-send"]');
+  await expect(send).toBeDisabled();
+  await page.locator('[data-slot="chat-input-textarea"]').fill("Co zdecydował Sejm?");
+  await expect(send).toBeEnabled();
+  expect(await send.evaluate(element => getComputedStyle(element, "::after").maskImage)).not.toBe("none");
+  await send.click();
+  const tool = page.locator('[data-tool-id="live-search"]');
+  await expect(tool).toBeVisible();
+  await expect(tool).toHaveAttribute("data-status", "running");
+  await expect(page.locator('[data-slot="chat-input-stop"]')).toBeVisible();
+  await page.evaluate(() => {
+    const controller = (window as unknown as { traceController: ReadableStreamDefaultController<Uint8Array> }).traceController;
+    for (const frame of [
+      { type: "tool_end", tool: { id: "live-search", name: "search_sejm_data", status: "done", output: "Znaleziono dane." } },
+      { type: "response", messages: [{ role: "assistant", content: "Odpowiedź na podstawie danych." }] },
+      { type: "done", threadId: "22222222-2222-4222-8222-222222222222", assistantMessageId: "live-answer", workedFor: 2 },
+    ]) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`));
+    controller.close();
+  });
+  await expect(page.getByText("Odpowiedź na podstawie danych.", { exact: true })).toBeVisible();
+  await expect(tool).toBeHidden();
+  await page.locator('[data-slot="message-process-trigger"]').click();
+  await expect(tool).toBeVisible();
+  await expect(tool).toHaveAttribute("data-status", "done");
+  await expect(page.getByText("Wyszukiwanie w danych Sejmu", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/asystent-agent-steps.png" });
+  expect(errors).toEqual([]);
+});
+
 test("simple chat preserves literal input and attachments, shows sources and has no navbar or harness", async ({ page }) => {
   const { requests, mutations, errors } = await mockChat(page);
   await expect(page.locator('[data-slot="chat-navbar"]')).toHaveCount(0);
@@ -69,9 +131,12 @@ test("simple chat preserves literal input and attachments, shows sources and has
   await expect(page.locator('[data-slot="chat-sources"]')).toContainText("tygodniksejmowy.pl");
   expect(requests[0]).toMatchObject({ content: "/pismo Cena $100 i @dokument", documents: [{ name: "projekt.md", content: "# Projekt ustawy\nArtykuł 1." }] });
   expect(requests[0]).not.toHaveProperty("mode");
-  await expect(page.locator('[data-slot="file-preview"], [data-slot="plan-card"], [data-slot="ask-question"], [data-slot="context-meter"], [data-slot="chat-input-queue"], [data-slot="message-tool-call"]')).toHaveCount(0);
+  await expect(page.locator('[data-slot="file-preview"], [data-slot="plan-card"], [data-slot="ask-question"], [data-slot="context-meter"], [data-slot="chat-input-queue"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Zmień tryb" })).toHaveCount(0);
   await expect(page.getByRole("table")).toBeVisible();
+  await page.locator('[data-slot="message-process-trigger"]').click();
+  await expect(page.locator('[data-slot="message-tool-call"]')).toHaveAttribute("data-status", "done");
+  await expect(page.getByText("Wyszukiwanie w danych Sejmu", { exact: true })).toBeVisible();
   const row = page.locator('[data-slot="sidebar-item"]').first();
   await expect(row.locator('[data-slot="sidebar-item-subtitle"]')).toBeVisible();
   await row.click({ button: "right" });

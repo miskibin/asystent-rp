@@ -173,3 +173,51 @@ body {
  scrollbar-width: none;
  &::-webkit-scrollbar { display: none; }
 }
+
+/* Consumer styling through the registry's data slots keeps vendored files intact. */
+.asystent-composer [data-slot="chat-input-surface"] {
+  box-shadow: none;
+}
+
+.asystent-composer [data-slot="chat-input-send"],
+.asystent-composer [data-slot="chat-input-stop"] {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.asystent-composer [data-slot="chat-input-send"] > span,
+.asystent-composer [data-slot="chat-input-stop"] > span {
+  @apply sr-only;
+}
+
+.asystent-composer [data-slot="chat-input-send"]::after {
+  content: "";
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 19V5m-7 7 7-7 7 7' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.asystent-workspace [data-slot="message-content"] {
+  font-size: 15px;
+}
+
+.asystent-landing {
+  --background: 45 25% 97%;
+  --foreground: 30 10% 13%;
+  --muted-foreground: 30 5% 43%;
+  --border: 35 12% 84%;
+  --primary: 30 10% 13%;
+  --primary-foreground: 45 25% 97%;
+}
+
+.dark .asystent-landing {
+  --background: 30 6% 9%;
+  --foreground: 40 15% 93%;
+  --muted-foreground: 35 6% 62%;
+  --border: 30 5% 25%;
+  --primary: 40 15% 93%;
+  --primary-foreground: 30 6% 9%;
+}

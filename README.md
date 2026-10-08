@@ -4,6 +4,8 @@
 
 Narzędzia `search_legal_provisions`, `get_legal_provision` i `get_legal_changes` korzystają z `/api/prawo/*` Tygodnika, zachowując pełne jednostki, identyfikatory wersji, datę i źródła. `TYGODNIK_LAW_URL` może wskazać podgląd tego samego kontraktu. Przepisy omijają ogólny limit 700 znaków; przekroczenie budżetu odrzuca całe jednostki i blokuje odpowiedź.
 
+Na Vercelu ustaw `TYGODNIK_LAW_URL=https://vm.tygodniksejmowy.pl` w Production i Preview, a następnie wdroż aplikację ponownie. To istniejący publiczny adres serwera Tygodnika, z tym samym kontraktem i wersjami dokumentów. Domena główna zwraca połączeniom z Vercela challenge Cloudflare (HTTP 403); serwerowy odczyt nie może go rozwiązać. Cytowania nadal prowadzą do `tygodniksejmowy.pl`. Diagnostyka zapisuje typ błędu i status HTTP bez pytania, treści dokumentu ani sekretów.
+
 Niepotwierdzona aktualność lub niekompletny kontekst zatrzymują generowanie porady po odczycie i zwracają sprawdzalne ograniczenie z odnośnikami. Model nie może zastąpić odmowy kolejną odpowiedzią z pamięci. Identyfikator wersji jest obowiązkowy przy pobieraniu wskazanej jednostki; API odrzuca rozbieżność. Cytowania zachowują dokładne kotwice artykułów. Przekazanie z widoku „Prawo” przygotowuje niewysłany szkic i przenosi go przez powrót z logowania.
 
 Integracja wymaga wdrożonego kontraktu Tygodnika. Pierwszy import ma niepotwierdzoną aktualność, więc nie jest jeszcze podstawą odpowiedzi o obowiązującym prawie. Odbiór wymaga sprawdzenia tekstów, zależności i kontekstu oraz zaakceptowanego przez człowieka zbioru pytań. Testy jednostkowe i przeglądarkowe sprawdzają działanie kontraktu; nie zastępują odbioru jakości prawnej.

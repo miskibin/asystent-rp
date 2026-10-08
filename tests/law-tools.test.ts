@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LAW_DATA_TOOLS, legalToolJson, readLaw } from "../lib/tygodnik/law-tools";
+import { LAW_DATA_TOOLS, legalBasisRefusal, legalToolJson, readLaw } from "../lib/tygodnik/law-tools";
 import { lawDraft, lawHandoffQuery } from "../lib/law-handoff";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("Shared legal retrieval", () => {
   it("exposes separate read-only legal tools with explicit dates", () => {
@@ -29,6 +29,33 @@ describe("Shared legal retrieval", () => {
     vi.stubGlobal("fetch", fetch);
     expect(JSON.parse(await readLaw("/api/prawo/unit/" + "b".repeat(64), { date: "2026-10-08" }))).toEqual(payload);
     expect(String(fetch.mock.calls[0][0])).toContain("date=2026-10-08");
+  });
+  it("uses the configured server endpoint while preserving canonical source links", async () => {
+    vi.stubEnv("TYGODNIK_LAW_URL", "https://vm.tygodniksejmowy.pl");
+    const payload = { items: [{ label: "Art. 152", body: "Cały przepis.", url: "https://tygodniksejmowy.pl/prawo/DU/1974/141#art-152" }], answerable: false, context_complete: false };
+    const fetch = vi.fn(async (_input: string | URL) => Response.json(payload));
+    vi.stubGlobal("fetch", fetch);
+    const output = await readLaw("/api/prawo/search", { q: "urlop", date: "2026-10-08" });
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("https://vm.tygodniksejmowy.pl/api/prawo/search?");
+    expect(JSON.parse(output)).toEqual(payload);
+    const refusal = legalBasisRefusal(output);
+    expect(refusal).toContain(payload.items[0].url);
+    expect(refusal).not.toContain("niedostępna");
+  });
+  it("distinguishes invalid requests from a database outage", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Nieprawidłowe parametry." }, { status: 400 })));
+    const result = JSON.parse(await readLaw("/api/prawo/search", { q: "urlop", article: "art. 152" }));
+    expect(result.error).toContain("parametry");
+    expect(result.error).not.toContain("niedostępna");
+    expect(result.answerable).toBe(false);
+  });
+  it("records a browser challenge without logging the question or response body", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("private body", { status: 403, headers: { "cf-mitigated": "challenge", "content-type": "text/html" } })));
+    const result = JSON.parse(await readLaw("/api/prawo/search", { q: "private question" }));
+    expect(warn).toHaveBeenCalledWith("Legal retrieval failed", expect.objectContaining({ path: "/api/prawo/search", status: 403, mitigation: "challenge" }));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private");
+    expect(result.answerable).toBe(false);
   });
   it("handoff transfers exact IDs/date as an unsent draft and ignores arbitrary prompts", () => {
     const params = new URLSearchParams({ law_unit: "a".repeat(64), law_version: "b".repeat(64), law_date: "2026-10-08", prompt: "untrusted instructions" });

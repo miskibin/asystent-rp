@@ -27,6 +27,11 @@ export async function readLaw(path: string, query: Record<string, string | undef
   const base = process.env.TYGODNIK_LAW_URL || "https://tygodniksejmowy.pl";
   const url = new URL(path, base);
   for (const [key, value] of Object.entries(query)) if (value) url.searchParams.set(key, value);
+  // The encoder-backed hybrid endpoint on the self-hosted Tygodnik can take
+  // longer than Vercel's request budget while Ollama is cold. FTS is the
+  // deterministic fallback for search; exact version retrieval below remains
+  // unchanged and still supplies the complete source unit.
+  if (path === "/api/prawo/search" && !url.searchParams.has("mode")) url.searchParams.set("mode", "text");
   try {
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(20000), headers: { Accept: "application/json", "User-Agent": "Asystent-RP/1.0 (+https://chat.tygodniksejmowy.pl)" } });
     if (!response.ok) {

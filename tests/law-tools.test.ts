@@ -37,6 +37,7 @@ describe("Shared legal retrieval", () => {
     vi.stubGlobal("fetch", fetch);
     const output = await readLaw("/api/prawo/search", { q: "urlop", date: "2026-10-08" });
     expect(String(fetch.mock.calls[0]?.[0])).toContain("https://vm.tygodniksejmowy.pl/api/prawo/search?");
+    expect(String(fetch.mock.calls[0]?.[0])).toContain("mode=text");
     expect(JSON.parse(output)).toEqual(payload);
     const refusal = legalBasisRefusal(output);
     expect(refusal).toContain(payload.items[0].url);

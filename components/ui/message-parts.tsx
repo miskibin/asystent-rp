@@ -6,11 +6,11 @@ import {
   Check,
   ChevronDown,
   Copy,
+  WrapText,
   FilePenLine,
   FileText,
   Globe,
   ListChecks,
-  Loader2,
   Search,
   Table2,
   Terminal,
@@ -55,9 +55,21 @@ import {
   formatWorkedFor,
   type FileActionItem,
 } from "@/components/ui/change-summary"
-import { FileIcon } from "@/components/ui/file-icon"
+import { DiffStat, type DiffStatProps } from "@/components/ui/diff-stat"
+import { FileIcon, fileIconId } from "@/components/ui/file-icon"
+import { GenerativeView } from "@/components/ui/generative-view"
+import {
+  ShineStyles,
+  shineClassName,
+} from "@/components/ui/generation-status"
 import { RenderErrorBoundary } from "@/components/ui/render-error-boundary"
-import { commandProgramName } from "@/lib/command-label"
+import {
+  commandProgramName,
+  leadingSleepSeconds,
+  tokenizeShell,
+  type ShellTokenKind,
+} from "@/lib/command-label"
+import { jsonToView } from "@/lib/generative-view"
 import { fnv1a32, LRUCache } from "@/lib/lru-cache"
 import { cn } from "@/lib/utils"
 import { MessageMarkdown } from "@/components/ui/message-markdown"
@@ -97,6 +109,67 @@ export type MessageAttachmentData = {
 const disclosureTrigger =
   "inline-flex max-w-full items-center gap-1.5 rounded-sm py-0.5 text-left text-[13px] leading-snug text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:pointer-events-none [&_svg]:shrink-0"
 
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/**
+ * The leading glyph of a disclosure row, in a column of its own. Every label
+ * in a turn — thinking, a tool, a folded group — then starts at the same x
+ * whatever icon precedes it, which is what lets a stack of rows read as one
+ * list rather than a ragged edge. The body below a row is indented to the same
+ * column (`disclosureBody`).
+ */
+function DisclosureIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      data-slot="disclosure-icon"
+      className="inline-flex w-4 shrink-0 items-center justify-center [&_svg:not([class*='size-'])]:size-3.5"
+    >
+      {children}
+    </span>
+  )
+}
+
+/** Hangs a row's body off its icon column: the rule under the glyph, the text under the label. */
+const disclosureBody = "ml-[7px] border-l border-border/70 pl-3.5"
+
+/** "Thought for 1 second", "Thought for 12 seconds", "Thought for 2m 5s". */
+export function formatThoughtDuration(seconds: number) {
+  const total = Math.max(0, Math.round(seconds))
+  if (total < 60) return `Thought for ${total} ${total === 1 ? "second" : "seconds"}`
+  const minutes = Math.floor(total / 60)
+  const rest = total % 60
+  return `Thought for ${minutes}m${rest ? ` ${rest}s` : ""}`
+}
+
+/**
+ * Keeps a scrolling box on its last line while `active`, for as long as the
+ * reader leaves it there: scrolling the box up to reread stops the pinning,
+ * and scrolling back to its end resumes it. `content` is what grows.
+ */
+function useFollowLive<T extends HTMLElement>(active: boolean, content: unknown) {
+  const ref = React.useRef<T>(null)
+  const pinnedRef = React.useRef(true)
+
+  React.useEffect(() => {
+    const node = ref.current
+    if (!node || !active) return
+    pinnedRef.current = true
+    const onScroll = () => {
+      pinnedRef.current =
+        node.scrollHeight - node.scrollTop - node.clientHeight <= 8
+    }
+    node.addEventListener("scroll", onScroll, { passive: true })
+    return () => node.removeEventListener("scroll", onScroll)
+  }, [active])
+
+  React.useLayoutEffect(() => {
+    const node = ref.current
+    if (!node || !active || !pinnedRef.current) return
+    node.scrollTop = node.scrollHeight
+  }, [active, content])
+
+  return ref
+}
+
 export const MessageReasoning = React.memo(function MessageReasoning({
   children,
   defaultOpen = false,
@@ -122,16 +195,19 @@ export const MessageReasoning = React.memo(function MessageReasoning({
     else if (!defaultOpen) setOpen(false)
   }
 
-  const label =
-    duration == null
+  const label = streaming
+    ? "Thinking…"
+    : duration == null
       ? "Thought for a few seconds"
-      : `Thought for ${duration} seconds`
+      : formatThoughtDuration(duration)
+  const bodyRef = useFollowLive<HTMLDivElement>(streaming && open, children)
 
   return (
     <Collapsible
       open={open}
       onOpenChange={setOpen}
       data-slot="message-reasoning"
+      data-streaming={streaming || undefined}
       className={cn("mb-2 animate-in fade-in duration-150", className)}
     >
       <CollapsibleTrigger asChild>
@@ -140,8 +216,15 @@ export const MessageReasoning = React.memo(function MessageReasoning({
           data-slot="message-reasoning-trigger"
           className={disclosureTrigger}
         >
-          <Brain className="size-3.5 opacity-70" />
-          <span className="min-w-0 truncate">{label}</span>
+          <DisclosureIcon>
+            <Brain className="opacity-70" />
+          </DisclosureIcon>
+          {streaming ? <ShineStyles /> : null}
+          <span
+            className={cn("min-w-0 truncate", streaming && shineClassName)}
+          >
+            {label}
+          </span>
           <ChevronDown
             className={cn(
               "size-3.5 opacity-50 transition-transform duration-150",
@@ -151,11 +234,23 @@ export const MessageReasoning = React.memo(function MessageReasoning({
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent>
+        {/* Bounded, and pinned to its newest line while it streams: a long
+            thought otherwise pushed the answer a screen down, then collapsed
+            out from under a reader the moment it finished. */}
         <div
+          ref={bodyRef}
           data-slot="message-reasoning-content"
-          className="mt-2 border-l pl-3 text-[13px] leading-relaxed opacity-60"
+          className={cn(
+            "mt-2 max-h-80 overflow-y-auto overscroll-contain text-[13px] leading-relaxed opacity-60",
+            disclosureBody
+          )}
         >
-          <MessageMarkdown className="text-inherit! text-[13px]! leading-relaxed!">
+          {/* Paced like the answer: a thought streams in too, and one that
+              landed in raw chunks was the jumpiest thing on the screen. */}
+          <MessageMarkdown
+            isAnimating={streaming}
+            className="text-inherit! text-[13px]! leading-relaxed!"
+          >
             {children}
           </MessageMarkdown>
         </div>
@@ -428,11 +523,117 @@ export function summarizeCommand(command: string): {
   return { display, label: second ? `${program} ${second}` : program, program }
 }
 
+/**
+ * How each piece of a shell line is tinted — mostly by weight rather than hue,
+ * so a theme never has to agree with it: the programs carry the line, flags
+ * and plumbing step back, and only a quoted string takes a colour.
+ */
+const SHELL_TOKEN_CLASSES: Record<ShellTokenKind, string | undefined> = {
+  program: "text-foreground",
+  flag: "text-muted-foreground",
+  string: "text-chart-2",
+  variable: "text-chart-2/80",
+  operator: "text-muted-foreground",
+  comment: "text-muted-foreground/70 italic",
+  text: undefined,
+}
+
+/** A shell command, tinted. One lexer pass per command, memoized. */
+function ShellText({ command }: { command: string }) {
+  const tokens = React.useMemo(() => tokenizeShell(command), [command])
+  return tokens.map((token, index) => {
+    const className = SHELL_TOKEN_CLASSES[token.kind]
+    return className ? (
+      <span key={index} data-token={token.kind} className={className}>
+        {token.text}
+      </span>
+    ) : (
+      <React.Fragment key={index}>{token.text}</React.Fragment>
+    )
+  })
+}
+
+/** Shorter than this, a countdown would only flicker. */
+const MIN_COUNTDOWN_SECONDS = 5
+const MAX_SLEEP_STARTS = 200
+
+/**
+ * When each sleeping tool was first seen, by id — module state rather than
+ * component state so a row that remounts (a virtualized list, a re-opened
+ * chat) keeps counting from where it was instead of starting over.
+ */
+const sleepStarts = new Map<string, number>()
+
+function sleepStartedAt(toolId: string) {
+  let started = sleepStarts.get(toolId)
+  if (started == null) {
+    started = Date.now()
+    sleepStarts.set(toolId, started)
+    if (sleepStarts.size > MAX_SLEEP_STARTS) {
+      sleepStarts.delete(sleepStarts.keys().next().value as string)
+    }
+  }
+  return started
+}
+
+function formatCountdown(seconds: number) {
+  const total = Math.ceil(seconds)
+  if (total < 60) return `${total}s`
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return `${minutes}:${String(total % 60).padStart(2, "0")}`
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`
+}
+
+/**
+ * "Sleeping · 2:31 left" beside a command that opened with `sleep 195`. The
+ * text is written straight to the node once a second, so the memoized row
+ * never re-renders for it, and it goes quiet at zero — whatever the command
+ * does after its sleep is not something this can time.
+ */
+function SleepCountdown({
+  toolId,
+  seconds,
+}: {
+  toolId: string
+  seconds: number
+}) {
+  const ref = React.useRef<HTMLSpanElement>(null)
+  React.useEffect(() => {
+    const node = ref.current
+    if (!node || seconds < MIN_COUNTDOWN_SECONDS) return
+    const endsAt = sleepStartedAt(toolId) + seconds * 1000
+    const render = () => {
+      const left = (endsAt - Date.now()) / 1000
+      node.textContent =
+        left > 0 ? `sleeping · ${formatCountdown(left)} left` : ""
+      return left > 0
+    }
+    if (!render()) return
+    const timer = setInterval(() => {
+      if (!render()) clearInterval(timer)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [toolId, seconds])
+  return (
+    <span
+      ref={ref}
+      data-slot="message-tool-call-countdown"
+      // The first paint has no clock to read; the effect fills it in.
+      suppressHydrationWarning
+      className="shrink-0 text-[12px] text-muted-foreground tabular-nums empty:hidden"
+    />
+  )
+}
+
 type ToolHeadline = {
   label: string
   detail?: string
   /** Hover text for the detail — the untouched command behind a summary. */
   title?: string
+  /** A command that starts by sleeping this long; the row counts it down. */
+  sleepSeconds?: number
+  /** The detail is a shell line, and is tinted as one. */
+  shell?: boolean
 }
 
 function toolHeadline(tool: MessageToolCallData): ToolHeadline {
@@ -478,6 +679,8 @@ function toolHeadline(tool: MessageToolCallData): ToolHeadline {
   }
   if (kind.includes("shell") || kind === "bash" || kind === "command") {
     const summary = command ? summarizeCommand(command) : null
+    const sleepSeconds =
+      (summary && leadingSleepSeconds(summary.display)) ?? undefined
     if (!summary?.program) {
       return {
         label: failed
@@ -488,6 +691,8 @@ function toolHeadline(tool: MessageToolCallData): ToolHeadline {
         // Nothing to name, but the line itself is still worth showing.
         detail: summary ? clip(summary.display) : undefined,
         title: command,
+        sleepSeconds,
+        shell: true,
       }
     }
     return {
@@ -499,6 +704,8 @@ function toolHeadline(tool: MessageToolCallData): ToolHeadline {
       detail: clip(summary.display),
       // The row shows the unwrapped line; the hover keeps the original.
       title: command,
+      sleepSeconds,
+      shell: true,
     }
   }
   if (kind.includes("read")) {
@@ -892,29 +1099,18 @@ function formatDiffStats(lines: ToolDiffLine[]) {
 export function DiffStats({
   added,
   removed,
-  className,
   ...props
-}: React.ComponentProps<"span"> & {
+}: Omit<DiffStatProps, "additions" | "deletions"> & {
   added: number
   removed: number
 }) {
-  if (added === 0 && removed === 0) return null
   return (
-    <span
+    <DiffStat
       data-slot="message-tool-stats"
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 font-mono text-[12px] tabular-nums",
-        className
-      )}
+      additions={added}
+      deletions={removed}
       {...props}
-    >
-      {added > 0 ? (
-        <span className="text-emerald-600 dark:text-emerald-400">+{added}</span>
-      ) : null}
-      {removed > 0 ? (
-        <span className="text-red-500 dark:text-red-400">-{removed}</span>
-      ) : null}
-    </span>
+    />
   )
 }
 
@@ -1220,26 +1416,44 @@ const OUTPUT_CHAR_CAP = 4_000
 const ToolText = React.memo(function ToolText({
   text,
   tone,
+  live = false,
 }: {
   text: string
   tone?: "error"
+  /**
+   * The tool is still running. Its newest output is the part worth seeing —
+   * a build or a test run prints its verdict last — so the cap keeps the
+   * *tail* and the box stays pinned to it. A finished tool shows the head.
+   */
+  live?: boolean
 }) {
   const [showAll, setShowAll] = React.useState(false)
   const lines = React.useMemo(() => text.split("\n"), [text])
   const capped =
     !showAll &&
     (lines.length > OUTPUT_LINE_CAP || text.length > OUTPUT_CHAR_CAP)
-  const visible = capped
-    ? lines.slice(0, OUTPUT_LINE_CAP).join("\n").slice(0, OUTPUT_CHAR_CAP)
-    : text
+  const visible = !capped
+    ? text
+    : live
+      ? lines.slice(-OUTPUT_LINE_CAP).join("\n").slice(-OUTPUT_CHAR_CAP)
+      : lines.slice(0, OUTPUT_LINE_CAP).join("\n").slice(0, OUTPUT_CHAR_CAP)
   const showAllLines = React.useCallback(() => setShowAll(true), [])
+  const preRef = useFollowLive<HTMLPreElement>(live, visible)
 
   return (
     <div
       data-slot="message-tool-text"
+      data-live={live || undefined}
       className="overflow-hidden rounded-md border border-border/60 bg-muted/30"
     >
+      {capped && live ? (
+        <div className="border-b border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
+          Showing the latest {Math.min(lines.length, OUTPUT_LINE_CAP)} of{" "}
+          {lines.length} lines
+        </div>
+      ) : null}
       <pre
+        ref={preRef}
         className={cn(
           "m-0 max-h-[min(22rem,55vh)] overflow-auto px-2 py-1.5 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap",
           tone === "error" ? "text-destructive" : "text-muted-foreground"
@@ -1555,6 +1769,24 @@ export const MessageToolCall = React.memo(function MessageToolCall({
     [deferredTool]
   )
   /**
+   * A tool that answered in JSON — an MCP server, `gh … --json`, `gerrit
+   * query --format=JSON` — is drawn as a view rather than printed, read off the
+   * shape of the data with no knowledge of the service. Only once it has
+   * finished: half a JSON document is not one.
+   */
+  const outputView = React.useMemo(
+    () =>
+      (deferredTool.status ?? "done") === "done"
+        ? jsonToView(cleanToolOutput(deferredTool.output))
+        : undefined,
+    [deferredTool]
+  )
+  const [rawOutput, setRawOutput] = React.useState(false)
+  const toggleRawOutput = React.useCallback(
+    () => setRawOutput((raw) => !raw),
+    []
+  )
+  /**
    * An ask the agent closed without a selection is still the user's to answer,
    * but only where the owner says so: `onAskAnswer` is the signal that this row
    * is the live one. Without it an ask from an old turn would reopen on reload.
@@ -1726,15 +1958,25 @@ export const MessageToolCall = React.memo(function MessageToolCall({
   const iconPath =
     path && headline.detail === fileName(path) ? path : undefined
 
+  const ActionIcon = TOOL_GROUP_ICONS[toolGroupAction(displayTool)]
+
+  /* No spinner: the label itself shines while the call runs, and the icon
+     keeps saying *what* is running. A file row's glyph is the file's own. */
   const headlineContent = (
     <>
-      {running ? (
-        <Loader2 className="size-3 animate-spin opacity-70" />
-      ) : errored ? (
-        <TriangleAlert className="size-3 text-destructive" />
-      ) : null}
-      <span className="shrink-0">{headline.label}</span>
-      {iconPath ? <FileIcon path={iconPath} size={14} /> : null}
+      <DisclosureIcon>
+        {errored ? (
+          <TriangleAlert className="text-destructive" />
+        ) : iconPath ? (
+          <FileIcon path={iconPath} size={14} />
+        ) : (
+          <ActionIcon className="opacity-70" />
+        )}
+      </DisclosureIcon>
+      {running ? <ShineStyles /> : null}
+      <span className={cn("shrink-0", running && shineClassName)}>
+        {headline.label}
+      </span>
       {headline.detail ? (
         <span
           className={cn(
@@ -1743,8 +1985,18 @@ export const MessageToolCall = React.memo(function MessageToolCall({
           )}
           title={headline.title ?? headline.detail}
         >
-          {headline.detail}
+          {headline.shell && !errored ? (
+            <ShellText command={headline.detail} />
+          ) : (
+            headline.detail
+          )}
         </span>
+      ) : null}
+      {running && headline.sleepSeconds ? (
+        <SleepCountdown
+          toolId={displayTool.id}
+          seconds={headline.sleepSeconds}
+        />
       ) : null}
       {stats ? (
         <DiffStats added={stats.added} removed={stats.removed} />
@@ -1838,7 +2090,7 @@ export const MessageToolCall = React.memo(function MessageToolCall({
         <CollapsibleContent>
           <div
             data-slot="message-tool-call-body"
-            className="mb-1.5 ml-0.5 space-y-1.5 border-l border-border/70 pl-3"
+            className={cn("mb-1.5 space-y-1.5", disclosureBody)}
           >
             {showAskSummary && ask && resolvedAsk ? (
               <AskQuestionSummary
@@ -1871,7 +2123,7 @@ export const MessageToolCall = React.memo(function MessageToolCall({
                 data-slot="message-tool-command"
                 className="m-0 overflow-x-auto rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 font-mono text-[12.5px] leading-relaxed break-words whitespace-pre-wrap text-foreground/90"
               >
-                {commandText}
+                <ShellText command={commandText} />
               </pre>
             ) : null}
             {argRows.length > 0 ? (
@@ -1893,8 +2145,29 @@ export const MessageToolCall = React.memo(function MessageToolCall({
               </dl>
             ) : null}
             {rawInput ? <ToolText text={rawInput} /> : null}
-            {showOutput && outputText ? (
-              <ToolText text={outputText} tone={errored ? "error" : undefined} />
+            {showOutput && outputText && outputView && !errored ? (
+              <div data-slot="message-tool-output-view" className="space-y-1">
+                {rawOutput ? (
+                  <ToolText text={outputText} />
+                ) : (
+                  <GenerativeView view={outputView} className="py-0.5" />
+                )}
+                <button
+                  type="button"
+                  data-slot="message-tool-output-toggle"
+                  data-state={rawOutput ? "raw" : "view"}
+                  onClick={toggleRawOutput}
+                  className="cursor-pointer rounded-sm text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  {rawOutput ? "Show as view" : "Show raw output"}
+                </button>
+              </div>
+            ) : showOutput && outputText ? (
+              <ToolText
+                text={outputText}
+                tone={errored ? "error" : undefined}
+                live={running}
+              />
             ) : null}
           </div>
         </CollapsibleContent>
@@ -2152,7 +2425,9 @@ export function MessageToolCalls({
           data-kind={summaryKind}
           className={cn(disclosureTrigger, "w-full")}
         >
-          <SummaryIcon className="size-3.5 opacity-70" />
+          <DisclosureIcon>
+            <SummaryIcon className="opacity-70" />
+          </DisclosureIcon>
           <span className="min-w-0 truncate">{summary}</span>
           <ChevronDown
             className={cn(
@@ -2246,12 +2521,40 @@ export function MessageProcess({
   )
 }
 
+/** Fence names that are not also the file extension the icon set keys on. */
+const LANGUAGE_EXTENSIONS: Record<string, string> = {
+  typescript: "ts",
+  javascript: "js",
+  python: "py",
+  rust: "rs",
+  golang: "go",
+  bash: "sh",
+  shell: "sh",
+  shellscript: "sh",
+  zsh: "sh",
+  console: "sh",
+  markdown: "md",
+  "c++": "cpp",
+  dockerfile: "dockerfile",
+}
+
+/**
+ * A file name whose icon stands for a fence's language — or undefined where
+ * the icon set has nothing more specific than a blank page, in which case the
+ * header says the language in words instead.
+ */
+function languageIconPath(language: string): string | undefined {
+  const ext = LANGUAGE_EXTENSIONS[language] ?? language
+  const path = ext === "dockerfile" ? ext : `code.${ext}`
+  return fileIconId(path) === "document" ? undefined : path
+}
+
 /** What a block that could not be drawn falls back to: the text, unstyled. */
 function CodeFallback({ code }: { code: string }) {
   return (
     <pre
       data-slot="message-code-fallback"
-      className="m-0 overflow-x-auto bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.55] whitespace-pre-wrap text-foreground"
+      className="m-0 overflow-x-auto px-3 pt-1.5 pb-3 font-mono text-[12.5px] leading-[1.55] whitespace-pre-wrap text-foreground"
     >
       <code>{code}</code>
     </pre>
@@ -2262,11 +2565,14 @@ function HighlightedCode({
   code,
   language,
   streaming = false,
+  wrap = false,
 }: {
   code: string
   language?: string
   /** The fence is still growing — highlight it, but do not cache the result. */
   streaming?: boolean
+  /** Soft-wrap long lines instead of scrolling them sideways. */
+  wrap?: boolean
 }) {
   const { resolvedTheme } = useTheme()
   const lang = normalizeLang(language)
@@ -2296,7 +2602,12 @@ function HighlightedCode({
 
   if (!html) {
     return (
-      <pre className="m-0 overflow-x-auto bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.55] text-foreground">
+      <pre
+        className={cn(
+          "m-0 overflow-x-auto px-3 pt-1.5 pb-3 font-mono text-[12.5px] leading-[1.55] text-foreground",
+          wrap && "break-words whitespace-pre-wrap"
+        )}
+      >
         <code>{code}</code>
       </pre>
     )
@@ -2304,7 +2615,10 @@ function HighlightedCode({
 
   return (
     <div
-      className="lc-code-shiki overflow-x-auto bg-muted text-[12.5px] leading-[1.55] [&_code]:font-mono [&_pre]:m-0 [&_pre]:px-3.5 [&_pre]:py-3 [&_pre]:!bg-transparent"
+      className={cn(
+        "lc-code-shiki overflow-x-auto text-[12.5px] leading-[1.55] [&_code]:font-mono [&_pre]:m-0 [&_pre]:px-3 [&_pre]:pt-1.5 [&_pre]:pb-3 [&_pre]:!bg-transparent",
+        wrap && "[&_pre]:break-words [&_pre]:whitespace-pre-wrap"
+      )}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
@@ -2326,6 +2640,7 @@ export const MessageCode = React.memo(function MessageCode({
   streaming?: boolean
 }) {
   const [copied, setCopied] = React.useState(false)
+  const [wrap, setWrap] = React.useState(false)
 
   /* "Copied" waits for the write to land: `navigator.clipboard` is undefined
      outside a secure context, and a write can still be refused. */
@@ -2359,28 +2674,45 @@ export const MessageCode = React.memo(function MessageCode({
     )
   }
 
+  // Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+  /* No bar across the top: the header is a quiet line inside the frame — the
+     file it is, or the language's own icon, and two ghost buttons — so the
+     code is the thing the block is made of. */
+  const iconPath = block.title ?? languageIconPath(langLabel)
+
   return (
     <div
       data-slot="message-code"
+      data-wrap={wrap || undefined}
       className={cn(
-        "my-3 overflow-hidden rounded-lg border bg-muted animate-in fade-in duration-150",
+        "my-3 overflow-hidden rounded-lg border border-border/70 bg-muted animate-in fade-in duration-150 dark:border-transparent",
         className
       )}
     >
       <div
         data-slot="message-code-header"
-        className="flex h-8 items-center gap-2 border-b px-2.5"
+        className="flex items-center gap-2 pt-1.5 pr-1.5 pl-3 select-none"
       >
-        <span className="rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          {langLabel}
+        <span
+          data-slot="message-code-title"
+          className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[11px] text-muted-foreground"
+          title={block.title ? langLabel : undefined}
+        >
+          {iconPath ? <FileIcon path={iconPath} size={14} /> : null}
+          <span className="truncate">{block.title ?? langLabel}</span>
         </span>
-        {block.title ? (
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted-foreground">
-            {block.title}
-          </span>
-        ) : (
-          <span className="flex-1" />
-        )}
+        <button
+          type="button"
+          data-slot="message-code-wrap"
+          data-state={wrap ? "on" : "off"}
+          aria-pressed={wrap}
+          onClick={() => setWrap((value) => !value)}
+          title={wrap ? "Don’t wrap lines" : "Wrap lines"}
+          aria-label={wrap ? "Don’t wrap lines" : "Wrap lines"}
+          className={codeHeaderButton}
+        >
+          <WrapText />
+        </button>
         <button
           type="button"
           data-slot="message-code-copy"
@@ -2388,7 +2720,7 @@ export const MessageCode = React.memo(function MessageCode({
           onClick={copy}
           title={copied ? "Copied" : "Copy"}
           aria-label={copied ? "Copied" : "Copy code"}
-          className="inline-grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:pointer-events-none [&_svg]:size-3.5"
+          className={codeHeaderButton}
         >
           {copied ? <Check /> : <Copy />}
         </button>
@@ -2401,11 +2733,103 @@ export const MessageCode = React.memo(function MessageCode({
           code={block.code}
           language={block.language}
           streaming={streaming}
+          wrap={wrap}
         />
       </RenderErrorBoundary>
     </div>
   )
 })
+
+const codeHeaderButton =
+  "inline-grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/[0.07] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=on]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-3.5"
+
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+export type MessageDividerProps = Omit<
+  React.ComponentProps<"div">,
+  "children"
+> & {
+  /** What happened between the turns — "Context compacted", "Switched to Opus". */
+  label: React.ReactNode
+  /** A muted second half after a dot — a model name, a token count, a time. */
+  detail?: React.ReactNode
+  icon?: React.ReactNode
+  /** `danger` for something that went wrong *between* turns — a crash, a lost session. */
+  tone?: "neutral" | "danger"
+  /** Makes the pill a button — "Restore", "Show what changed". */
+  onAction?: () => void
+  /** The action's accessible name and tooltip; the label alone is not one. */
+  actionLabel?: string
+}
+
+/**
+ * A line across the transcript with a pill in the middle: something the app
+ * did between two turns rather than a message anyone wrote. Not memoized —
+ * it is a few spans, and a host renders one between rows it already memoizes.
+ */
+export function MessageDivider({
+  label,
+  detail,
+  icon,
+  tone = "neutral",
+  onAction,
+  actionLabel,
+  className,
+  ...props
+}: MessageDividerProps) {
+  const content = (
+    <>
+      {icon}
+      <span className="font-medium">{label}</span>
+      {detail != null ? (
+        <span
+          data-slot="message-divider-detail"
+          className="inline-flex max-w-80 min-w-0 items-center truncate opacity-70"
+        >
+          ·&nbsp;{detail}
+        </span>
+      ) : null}
+    </>
+  )
+  const pill =
+    "flex min-w-0 items-center gap-1.5 rounded-full px-2.5 py-1 [&_svg]:size-3 [&_svg]:shrink-0"
+
+  return (
+    <div
+      // A separator holds no focusable content, so a divider with an action
+      // is just a row with a button in it.
+      role={onAction ? undefined : "separator"}
+      data-slot="message-divider"
+      data-tone={tone}
+      className={cn(
+        "flex min-w-0 items-center gap-2 py-2 text-[11px] text-muted-foreground data-[tone=danger]:text-destructive",
+        className
+      )}
+      {...props}
+    >
+      <span aria-hidden className="h-px flex-1 bg-border/70" />
+      {onAction ? (
+        <button
+          type="button"
+          data-slot="message-divider-action"
+          onClick={onAction}
+          title={actionLabel}
+          aria-label={actionLabel}
+          className={cn(
+            pill,
+            "cursor-pointer border border-border/70 bg-background outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          )}
+        >
+          {content}
+        </button>
+      ) : (
+        <span data-slot="message-divider-label" className={pill}>
+          {content}
+        </span>
+      )}
+      <span aria-hidden className="h-px flex-1 bg-border/70" />
+    </div>
+  )
+}
 
 function ArtifactIcon({ kind }: { kind?: string }) {
   return kind === "table" ? (

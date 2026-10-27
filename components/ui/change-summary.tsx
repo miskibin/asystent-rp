@@ -15,6 +15,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import { DiffStat } from "@/components/ui/diff-stat"
 import { FileIcon } from "@/components/ui/file-icon"
 import { cn } from "@/lib/utils"
 
@@ -143,32 +144,6 @@ function fileKind(path: string) {
   return "text"
 }
 
-/** +/- is the one raw-palette exception: no theme token means "grew". */
-function DiffStats({
-  additions = 0,
-  deletions = 0,
-}: {
-  additions?: number
-  deletions?: number
-}) {
-  if (additions === 0 && deletions === 0) return null
-  return (
-    <span
-      data-slot="change-summary-stats"
-      className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[12px] tabular-nums"
-    >
-      {additions > 0 ? (
-        <span className="text-emerald-600 dark:text-emerald-400">
-          +{additions}
-        </span>
-      ) : null}
-      {deletions > 0 ? (
-        <span className="text-red-500 dark:text-red-400">-{deletions}</span>
-      ) : null}
-    </span>
-  )
-}
-
 function FileRow({
   file,
   onSelect,
@@ -190,7 +165,13 @@ function FileRow({
       <span className="min-w-0 flex-1 truncate text-left" title={file.path}>
         {fileName(file.path)}
       </span>
-      <DiffStats additions={file.additions} deletions={file.deletions} />
+      {/* Aligned: down a list of files every + and − sits in its own column. */}
+      <DiffStat
+        data-slot="change-summary-stats"
+        layout="aligned"
+        additions={file.additions}
+        deletions={file.deletions}
+      />
     </>
   )
   // `text-foreground` sits on the row, not on the name: the interactive row
@@ -398,10 +379,19 @@ function isFileMutationTool(name: string) {
   )
 }
 
+/**
+ * A `+3` / `−1` count standing on its own. Bounded on both sides because a
+ * tool's output is mostly prose with paths in it, and a bare `-(\d+)` read
+ * `File created successfully at: …/babysit-107347/watcher.sh` as 107k lines
+ * deleted from a file that had just been written.
+ */
+const ADDED_STAT = /(?:^|[\s([,])\+(\d+)(?=$|[\s)\],])/
+const REMOVED_STAT = /(?:^|[\s([,])[-−](\d+)(?=$|[\s)\],])/
+
 function parseOutputStats(output?: string) {
   if (!output) return { additions: 0, deletions: 0 }
-  const added = output.match(/\+(\d+)/)
-  const removed = output.match(/[-−](\d+)/)
+  const added = output.match(ADDED_STAT)
+  const removed = output.match(REMOVED_STAT)
   return {
     additions: added ? Number(added[1]) : 0,
     deletions: removed ? Number(removed[1]) : 0,

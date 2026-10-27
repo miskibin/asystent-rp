@@ -1,3 +1,7 @@
+/* Element rules stop at a generative view: its blocks carry their own type
+   and spacing, and a markdown paragraph margin or link colour leaking into a
+   table cell is exactly what made it look like a document, not a UI. The
+   guard is wrapped in :where() so it adds no specificity. */
 .lc-markdown {
   color: var(--foreground);
   font-size: 15px;
@@ -25,7 +29,7 @@
   overscroll-behavior-x: contain;
 }
 
-.lc-markdown img,
+.lc-markdown img:where(:not([data-slot="generative-view"] *)),
 .lc-markdown [data-streamdown="image"] img,
 .lc-markdown [data-streamdown="image"] {
   max-width: 100%;
@@ -45,21 +49,21 @@
   padding: 4px 0;
 }
 
-.lc-markdown table {
+.lc-markdown table:where(:not([data-slot="generative-view"] *)) {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
   overflow-wrap: normal;
 }
 
-.lc-markdown th,
-.lc-markdown td {
+.lc-markdown th:where(:not([data-slot="generative-view"] *)),
+.lc-markdown td:where(:not([data-slot="generative-view"] *)) {
   border: 1px solid var(--border);
   padding: 8px 10px;
   text-align: left;
 }
 
-.lc-markdown th {
+.lc-markdown th:where(:not([data-slot="generative-view"] *)) {
   background: var(--muted);
   font-weight: 600;
 }
@@ -69,75 +73,75 @@
   margin: 10px 0 14px;
 }
 
-.lc-markdown p {
+.lc-markdown p:where(:not([data-slot="generative-view"] *)) {
   margin: 0 0 12px;
 }
 
-.lc-markdown p:last-child {
+.lc-markdown p:where(:not([data-slot="generative-view"] *)):last-child {
   margin-bottom: 0;
 }
 
-.lc-markdown h1,
-.lc-markdown h2,
-.lc-markdown h3,
-.lc-markdown h4 {
+.lc-markdown h1:where(:not([data-slot="generative-view"] *)),
+.lc-markdown h2:where(:not([data-slot="generative-view"] *)),
+.lc-markdown h3:where(:not([data-slot="generative-view"] *)),
+.lc-markdown h4:where(:not([data-slot="generative-view"] *)) {
   margin: 18px 0 8px;
   font-weight: 600;
   color: var(--foreground);
   letter-spacing: -0.01em;
 }
 
-.lc-markdown h1 {
+.lc-markdown h1:where(:not([data-slot="generative-view"] *)) {
   font-size: 22px;
 }
 
-.lc-markdown h2 {
+.lc-markdown h2:where(:not([data-slot="generative-view"] *)) {
   font-size: 19px;
 }
 
-.lc-markdown h3 {
+.lc-markdown h3:where(:not([data-slot="generative-view"] *)) {
   font-size: 16.5px;
 }
 
-.lc-markdown h4 {
+.lc-markdown h4:where(:not([data-slot="generative-view"] *)) {
   font-size: 15px;
 }
 
-.lc-markdown a {
+.lc-markdown a:where(:not([data-slot="generative-view"] *)) {
   color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.lc-markdown strong {
+.lc-markdown strong:where(:not([data-slot="generative-view"] *)) {
   color: var(--foreground);
   font-weight: 600;
 }
 
-.lc-markdown ul,
-.lc-markdown ol {
+.lc-markdown ul:where(:not([data-slot="generative-view"] *)),
+.lc-markdown ol:where(:not([data-slot="generative-view"] *)) {
   margin: 0 0 12px;
   padding-left: 22px;
 }
 
-.lc-markdown li {
+.lc-markdown li:where(:not([data-slot="generative-view"] *)) {
   margin: 4px 0;
 }
 
-.lc-markdown blockquote {
+.lc-markdown blockquote:where(:not([data-slot="generative-view"] *)) {
   margin: 12px 0;
   padding: 4px 0 4px 14px;
   border-left: 3px solid var(--border);
   color: var(--muted-foreground);
 }
 
-.lc-markdown hr {
+.lc-markdown hr:where(:not([data-slot="generative-view"] *)) {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 18px 0;
 }
 
-.lc-markdown code:not(pre code) {
+.lc-markdown code:where(:not([data-slot="generative-view"] *)):not(pre code) {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--muted);
@@ -156,19 +160,30 @@
   padding: 0;
   gap: 0;
   overflow: hidden;
-  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  border-radius: calc(var(--radius) + 2px);
   background: var(--muted);
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
 
+/* Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026
+   T3 Tools Inc. — the frame is the surface in dark mode, not a line around it,
+   and the header below is a quiet line inside the frame rather than a bar. */
+.dark .lc-markdown [data-streamdown="code-block"] {
+  border-color: transparent;
+}
+
 .lc-markdown [data-streamdown="code-block-header"] {
   grid-column: 1;
   grid-row: 1;
-  height: 2rem;
-  min-height: 2rem;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--border);
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 6px 6px 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  border-bottom: 0;
 }
 
 .lc-markdown [data-streamdown="code-block"] > :has(> [data-streamdown="code-block-actions"]) {
@@ -177,13 +192,13 @@
   position: static;
   top: auto;
   margin-top: 0;
-  height: 2rem;
-  padding-right: 6px;
+  height: 1.75rem;
+  padding: 6px 6px 0 0;
   align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 0;
 }
 
 .lc-markdown [data-streamdown="code-block-actions"] {
@@ -199,7 +214,7 @@
   grid-row: 2;
   border: 0;
   border-radius: 0;
-  padding: 8px 10px;
+  padding: 6px 12px 12px;
   background: transparent;
 }
 
@@ -212,7 +227,7 @@
   background: transparent;
 }
 
-.lc-markdown pre {
+.lc-markdown pre:where(:not([data-slot="generative-view"] *)) {
   margin: 8px 0 12px;
   background: var(--muted);
   color: var(--foreground);
@@ -221,7 +236,7 @@
   overflow: hidden;
 }
 
-.lc-markdown pre code {
+.lc-markdown pre:where(:not([data-slot="generative-view"] *)) code {
   display: block;
   padding: 8px 10px;
   font-family: var(--font-mono);
@@ -285,4 +300,13 @@
 
 .lc-markdown blockquote[data-alert="caution"] {
   --lc-alert: var(--destructive);
+}
+
+/* The paced reveal's word fade is motion; readers who asked for less get the
+   words without it. Pacing itself stays — text arriving is not animation. */
+@media (prefers-reduced-motion: reduce) {
+  .lc-markdown [data-sd-animate],
+  .lc-markdown [data-sd-animate-marker]::marker {
+    animation: none;
+  }
 }

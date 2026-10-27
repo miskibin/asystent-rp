@@ -449,8 +449,7 @@ export function AskQuestion({
       question: AskQuestionItem,
       options: AskQuestionOption[]
     ) => {
-      if (question.allowMultiple || !ARROW_KEYS.includes(event.key)) return
-      // Leave the Other… field alone — arrows there move the caret.
+      // Leave the Other… field alone — keys there type and move the caret.
       const origin = event.target as HTMLElement | null
       if (origin?.dataset.slot !== "ask-question-option") return
       const nodes = Array.from(
@@ -459,6 +458,16 @@ export function AskQuestion({
         )
       )
       if (nodes.length === 0) return
+      // 1–9 picks the option with that number, as the hint beside it says.
+      const digit = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1
+      if (digit >= 0 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (digit >= nodes.length) return
+        event.preventDefault()
+        nodes[digit].focus()
+        select(question, options[digit].id)
+        return
+      }
+      if (question.allowMultiple || !ARROW_KEYS.includes(event.key)) return
       event.preventDefault()
       const step = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1
       const from = nodes.indexOf(document.activeElement as HTMLButtonElement)
@@ -586,7 +595,7 @@ export function AskQuestion({
                               selected={selected}
                               multiple={!!question.allowMultiple}
                             />
-                            <span className="min-w-0">
+                            <span className="min-w-0 flex-1">
                               {optionLabel(option)}
                               {isRecommended(option) ? (
                                 <span className="ml-1.5 text-[11px] font-medium text-muted-foreground">
@@ -594,6 +603,15 @@ export function AskQuestion({
                                 </span>
                               ) : null}
                             </span>
+                            {index < 9 ? (
+                              <kbd
+                                data-slot="ask-question-option-key"
+                                aria-hidden
+                                className="shrink-0 font-sans text-[11px] tabular-nums text-muted-foreground/60"
+                              >
+                                {index + 1}
+                              </kbd>
+                            ) : null}
                           </button>
                           {isOther && selected ? (
                             <input

@@ -2,17 +2,26 @@
 
 import { cva } from "class-variance-authority"
 import {
+  ArrowUp,
   ClipboardPaste,
+  Ellipsis,
   FileText,
   ImageIcon,
+  ListOrdered,
+  ListPlus,
   Paperclip,
   Sparkles,
-  Square,
   Terminal,
   X,
 } from "lucide-react"
 import * as React from "react"
 
+import { ComposerDock } from "@/components/ui/composer-banner"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { FileIcon } from "@/components/ui/file-icon"
 import {
   promptHistoryEntries,
@@ -92,8 +101,28 @@ export type ChatInputProps = {
   onStop?: () => void
   isGenerating?: boolean
   placeholder?: string
-  /** Rendered next to the attach button — model/mode pickers belong here. */
+  /**
+   * Rendered next to the attach button — model/mode pickers belong here.
+   *
+   * When the row runs out of room it folds in two steps instead of wrapping:
+   * first every element marked `data-composer-label` inside it is hidden (a
+   * picker keeps its icon and loses its words), then — only if `toolsMenu` is
+   * given — every element marked `data-composer-overflow` is hidden and a "…"
+   * button offers `toolsMenu` in their place.
+   */
   tools?: React.ReactNode
+  /**
+   * What the "…" button opens once the controls marked `data-composer-overflow`
+   * no longer fit: `DropdownMenu` items, usually a radio group per hidden
+   * control. Without it the row wraps onto a second line instead.
+   */
+  toolsMenu?: React.ReactNode
+  /**
+   * Banners docked to the composer's top edge — a permission request, a
+   * question, a notice. Pass `ComposerBanner`s: they tuck under the composer
+   * and stack as one drawer.
+   */
+  banners?: React.ReactNode
   /**
    * Fires on every change to the draft, the clear after a send and the text a
    * slash command inserts included. The composer keeps owning the value; this
@@ -435,6 +464,8 @@ export function ChatInput({
   isGenerating = false,
   placeholder,
   tools,
+  toolsMenu,
+  banners,
   onTextChange,
   skills = EMPTY_SKILLS,
   slashCommands = EMPTY_COMMANDS,
@@ -764,15 +795,41 @@ export function ChatInput({
     [mentionIndex, mentionKey, mentionMatches.length]
   )
 
-  // Auto-resize the textarea, capped at `maxHeight`.
-  React.useEffect(() => {
+  /**
+   * Auto-resize the textarea, capped at `maxHeight`. In a layout effect, so a
+   * draft restored through the handle never paints a frame at the old height.
+   *
+   * The text is not the only thing that changes how many lines it wraps to:
+   * a side panel opening or the window narrowing does too, and a box sized
+   * only on keystrokes kept its old height with `overflow: hidden` — the extra
+   * lines simply vanished. So a width change measures again.
+   */
+  const fitHeight = React.useCallback(() => {
     const ta = taRef.current
     if (!ta) return
     ta.style.height = "auto"
     const capped = ta.scrollHeight > maxHeight
     ta.style.height = `${capped ? maxHeight : ta.scrollHeight}px`
     ta.style.overflowY = capped ? "auto" : "hidden"
-  }, [text, maxHeight])
+  }, [maxHeight])
+
+  React.useLayoutEffect(() => {
+    fitHeight()
+  }, [text, fitHeight])
+
+  React.useEffect(() => {
+    const ta = taRef.current
+    if (!ta || typeof ResizeObserver === "undefined") return
+    let width = ta.clientWidth
+    const observer = new ResizeObserver(() => {
+      // Our own height writes trigger this too; only a new width re-wraps.
+      if (ta.clientWidth === width) return
+      width = ta.clientWidth
+      fitHeight()
+    })
+    observer.observe(ta)
+    return () => observer.disconnect()
+  }, [fitHeight])
 
   const addFiles = React.useCallback((files: FileList | File[] | null) => {
     if (!files) return
@@ -1007,7 +1064,9 @@ export function ChatInput({
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Never steal keys from an IME candidate window.
-    if (event.nativeEvent.isComposing) return
+    // Safari ends an IME composition with an Enter whose `isComposing` is
+    // already false; keyCode 229 is the only sign it belonged to the IME.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
 
     if (
       onStash &&
@@ -1159,6 +1218,28 @@ export function ChatInput({
   const resolvedPlaceholder =
     placeholder ?? (queueing ? "Queue a message… (Enter)" : "Ask anything")
 
+  const toolsRowRef = React.useRef<HTMLDivElement>(null)
+  const toolsRef = React.useRef<HTMLDivElement>(null)
+  const canOverflow = toolsMenu != null
+  /* Refit when the row is resized and whenever the host hands over new
+     controls — a longer model name is a wider picker. Typing changes neither,
+     so a keystroke costs no measuring. */
+  React.useLayoutEffect(() => {
+    const row = toolsRowRef.current
+    const toolsNode = toolsRef.current
+    if (!row || !toolsNode) return
+    fitToolsRow(row, toolsNode, canOverflow)
+    if (typeof ResizeObserver === "undefined") return
+    let width = row.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (row.clientWidth === width) return
+      width = row.clientWidth
+      fitToolsRow(row, toolsNode, canOverflow)
+    })
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [canOverflow, tools])
+
   return (
     <div
       data-slot="chat-input"
@@ -1205,15 +1286,25 @@ export function ChatInput({
         ) : null}
 
         {queue.length > 0 ? (
-          <div data-slot="chat-input-queue" className="mb-2 flex flex-col gap-1">
-            <div className="px-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              Queued · {queue.length}
+          // Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+          /* Shaped like the user bubbles they will become, drawn dashed: a
+             message that has been written and not yet sent. */
+          <div
+            data-slot="chat-input-queue"
+            className="mb-2 flex flex-col items-end gap-1.5"
+          >
+            <div className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+              <ListOrdered className="size-3.5" />
+              <span>
+                Up next · <span className="tabular-nums">{queue.length}</span>{" "}
+                queued
+              </span>
             </div>
             {queue.map((item) => (
               <div
                 key={item.id}
                 data-slot="chat-input-queue-item"
-                className="flex items-center gap-2 rounded-md border bg-muted/40 px-2 py-1 text-[12px]"
+                className="group/queued flex max-w-[80%] min-w-0 items-center gap-1.5 rounded-2xl border border-dashed border-muted-foreground/40 bg-background py-1.5 ps-3 pe-1.5 text-[13px] text-muted-foreground"
               >
                 {onQueueEdit ? (
                   <button
@@ -1221,17 +1312,15 @@ export function ChatInput({
                     title="Edit this message"
                     aria-label={`Edit queued message: ${item.text}`}
                     onClick={() => onQueueEdit(item.id)}
-                    className="min-w-0 flex-1 truncate rounded-sm text-left text-foreground outline-none transition-colors hover:text-primary focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="min-w-0 flex-1 truncate rounded-sm text-left outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     {item.text}
                   </button>
                 ) : (
-                  <span className="min-w-0 flex-1 truncate text-foreground">
-                    {item.text}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate">{item.text}</span>
                 )}
                 {item.fileCount ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px]">
                     <Paperclip className="size-3" />
                     {item.fileCount}
                   </span>
@@ -1242,7 +1331,7 @@ export function ChatInput({
                     title="Remove"
                     aria-label={`Remove queued message: ${item.text}`}
                     onClick={() => onQueueRemove(item.id)}
-                    className="inline-grid size-4 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="inline-grid size-5 shrink-0 place-items-center rounded-full outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
                     <X className="size-3" />
                   </button>
@@ -1251,6 +1340,8 @@ export function ChatInput({
             ))}
           </div>
         ) : null}
+
+        {banners ? <ComposerDock>{banners}</ComposerDock> : null}
 
         <div
           data-slot="chat-input-surface"
@@ -1271,7 +1362,7 @@ export function ChatInput({
                page. So dark mode gets a rim of the foreground instead — the
                same lift, built from the light in the theme rather than from
                its absence. */
-            "rounded-2xl border bg-background px-3 pt-2.5 pb-2 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5",
+            "relative z-10 rounded-2xl border bg-background px-3 pt-2.5 pb-2 shadow-lg transition-colors has-[textarea:focus]:border-ring dark:ring-1 dark:ring-foreground/10 sm:px-3.5",
             dragOver && "border-primary ring-1 ring-primary/20"
           )}
           onDragOver={(e) => {
@@ -1402,52 +1493,95 @@ export function ChatInput({
             data-slot="chat-input-toolbar"
             className="mt-1 flex items-end justify-between gap-2"
           >
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
-              <button
-                type="button"
-                title="Attach file"
-                aria-label="Attach file"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={inputLocked}
-                className={cn(chatInputButtonVariants(), "px-1.5")}
+            <div
+              ref={toolsRowRef}
+              data-slot="chat-input-tools"
+              className={cn(
+                "flex min-w-0 flex-1 items-center gap-0.5",
+                "[&[data-fit=compact]_[data-composer-label]]:hidden",
+                "[&[data-fit=overflow]_[data-composer-label]]:hidden [&[data-fit=overflow]_[data-composer-overflow]]:hidden"
+              )}
+            >
+              <div
+                ref={toolsRef}
+                // Clipped, not hidden: the clip margin keeps focus rings whole.
+                className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-clip [overflow-clip-margin:4px] [[data-fit=wrap]>&]:flex-wrap [[data-fit=wrap]>&]:overflow-x-visible"
               >
-                <Paperclip />
-              </button>
-              {tools}
+                <button
+                  type="button"
+                  title="Attach file"
+                  aria-label="Attach file"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={inputLocked}
+                  className={cn(chatInputButtonVariants(), "px-1.5")}
+                >
+                  <Paperclip />
+                </button>
+                {tools}
+              </div>
+              {toolsMenu ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      data-slot="chat-input-tools-menu"
+                      title="More options"
+                      aria-label="More options"
+                      className={cn(
+                        chatInputButtonVariants(),
+                        "hidden px-1.5 [[data-fit=overflow]>&]:inline-flex data-[state=open]:bg-muted data-[state=open]:text-foreground"
+                      )}
+                    >
+                      <Ellipsis />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    side="top"
+                    align="start"
+                    className="min-w-48"
+                  >
+                    {toolsMenu}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1.5">
               {isGenerating ? (
                 <button
                   type="button"
                   data-slot="chat-input-stop"
                   onClick={onStop}
                   title="Stop generating"
+                  aria-label="Stop generating"
                   className={cn(
-                    chatInputButtonVariants({
-                      /* Queueing keeps both actions on screen — only one of
-                         them can be the primary one. */
-                      variant: queueing ? "ghost" : "primary",
-                    }),
-                    queueing && "border"
+                    roundActionClass,
+                    /* Queueing keeps both actions on screen — only one of
+                       them can be the loud one. */
+                    queueing
+                      ? "border bg-background text-foreground hover:bg-accent"
+                      : "bg-destructive/90 text-destructive-foreground hover:bg-destructive"
                   )}
                 >
-                  <Square className="size-2.5 fill-current" />
-                  <span className="text-[11px]">stop</span>
+                  <span aria-hidden className="size-2.5 rounded-[3px] bg-current" />
                 </button>
               ) : null}
               {isGenerating && !queueing ? null : (
                 <button
                   type="button"
                   data-slot="chat-input-send"
+                  data-action={queueing ? "queue" : "send"}
                   onClick={submit}
                   disabled={!canSend}
                   title={queueing ? "Queue (Enter)" : "Send (Enter)"}
-                  className={cn(chatInputButtonVariants({ variant: "primary" }))}
+                  aria-label={queueing ? "Queue message" : "Send message"}
+                  className={cn(
+                    roundActionClass,
+                    "bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-foreground/10 disabled:text-muted-foreground"
+                  )}
                 >
-                  <span className="hidden text-[13px] leading-none sm:inline">↵</span>
-                  <span className="text-[11px]">
-                    {queueing ? "queue" : "send"}
-                  </span>
+                  {/* Same button, a different promise: while a turn runs it
+                      adds to the queue rather than starting one. */}
+                  {queueing ? <ListPlus /> : <ArrowUp />}
                 </button>
               )}
             </div>
@@ -1456,6 +1590,35 @@ export function ChatInput({
       </div>
     </div>
   )
+}
+
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/** The composer's two loud buttons: round, a hair of lift, a press that gives. */
+const roundActionClass =
+  "inline-grid size-9 shrink-0 place-items-center rounded-full outline-none transition-[background-color,color,transform] duration-150 hover:scale-105 active:scale-95 focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:hover:scale-100 motion-reduce:transform-none sm:size-8 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+
+/**
+ * Which step of folding the controls row needs: everything (`full`), icons
+ * without their words (`compact`), then — given a menu to fold into — the
+ * marked controls behind "…" (`overflow`), else a second line (`wrap`).
+ * Written straight onto the row as `data-fit`, so fitting costs layout reads
+ * and no renders: a step is tried, measured, and kept the first time it fits.
+ */
+function fitToolsRow(row: HTMLElement, tools: HTMLElement, canOverflow: boolean) {
+  const fits = () => {
+    const left = tools.getBoundingClientRect().left
+    let right = left
+    for (const child of tools.children) {
+      const rect = child.getBoundingClientRect()
+      if (rect.width > 0) right = Math.max(right, rect.right)
+    }
+    return right - left <= tools.clientWidth + 0.5
+  }
+  const steps = ["full", "compact", canOverflow ? "overflow" : "wrap"]
+  for (const step of steps) {
+    row.dataset.fit = step
+    if (step === "wrap" || fits()) return
+  }
 }
 
 function Chip({

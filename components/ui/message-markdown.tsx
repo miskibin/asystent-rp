@@ -8,6 +8,7 @@ import {
   defaultRehypePlugins,
   defaultRemarkPlugins,
   type BlockProps,
+  type CustomRendererProps,
 } from "streamdown"
 import { code } from "@streamdown/code"
 import { mermaid } from "@streamdown/mermaid"
@@ -20,6 +21,7 @@ import {
   type FileActionItem,
 } from "@/components/ui/change-summary"
 import { FileIcon } from "@/components/ui/file-icon"
+import { GenerativeViewBlock } from "@/components/ui/generative-view"
 import { RenderErrorBoundary } from "@/components/ui/render-error-boundary"
 import { markdownClipboardPayload } from "@/lib/markdown-clipboard"
 import {
@@ -27,15 +29,35 @@ import {
   parseMarkdownFileLink,
   type FilePathPosition,
 } from "@/lib/markdown-file-paths"
+import { VIEW_FENCE_LANGUAGE, type ViewAction } from "@/lib/generative-view"
 import { remarkGithubAlerts } from "@/lib/markdown-github-alerts"
 import { remarkNormalizeListItemIndentation } from "@/lib/markdown-list-indentation"
+import { isContinuation, nextPhraseReveal } from "@/lib/stream-pacing"
 import { cn } from "@/lib/utils"
 
 const math = createMathPlugin({
   singleDollarTextMath: true,
 })
 
-const plugins = { code, mermaid, math }
+/**
+ * A ` ```ui ` fence is a view, not code: its JSON is drawn by
+ * `GenerativeViewBlock` from a closed vocabulary of display blocks. Module
+ * scope, like every renderer here — Streamdown compares them by reference.
+ */
+function ViewFence({ code: source, isIncomplete }: CustomRendererProps) {
+  const onAction = React.useContext(ViewActionContext)
+  return (
+    <GenerativeViewBlock
+      code={source}
+      isIncomplete={isIncomplete}
+      onAction={onAction}
+    />
+  )
+}
+
+const viewRenderers = [{ language: VIEW_FENCE_LANGUAGE, component: ViewFence }]
+const plugins = { code, mermaid, math, renderers: viewRenderers }
+const pluginsWithoutViews = { code, mermaid, math }
 
 type RehypePlugins = React.ComponentProps<typeof Streamdown>["rehypePlugins"]
 type RehypePlugin = NonNullable<RehypePlugins>[number]
@@ -169,6 +191,20 @@ export type MessageMarkdownProps = {
   className?: string
   /** True while the text is still streaming in. */
   isAnimating?: boolean
+  /**
+   * How streamed text reaches the screen. `"paced"` spreads each burst over
+   * the next few frames — never more than ~300ms behind the stream — and
+   * fades every new word in; `"instant"` paints chunks exactly as they land.
+   * Text already present when the component mounts is never replayed.
+   *
+   * @default "paced"
+   */
+  streaming?: "paced" | "instant"
+  /**
+   * A caret after the last line while text is arriving. Off by default; the
+   * paced fade already says the answer is live.
+   */
+  caret?: "block" | "circle"
   /** Inline replacements applied to paragraph and list-item text. */
   patternHandlers?: MarkdownPatternHandler[]
   /**
@@ -192,6 +228,18 @@ export type MessageMarkdownProps = {
    * @default true
    */
   copyAsMarkdown?: boolean
+  /**
+   * Draws a ` ```ui ` fence as a view (`GenerativeView`) instead of showing
+   * its JSON. Off, the fence is an ordinary code block.
+   *
+   * @default true
+   */
+  views?: boolean
+  /**
+   * What a view's button or form asks for — a message to send as the user's
+   * next turn. Without it those actions are drawn disabled.
+   */
+  onViewAction?: (action: ViewAction) => void
 }
 
 type FileRefContextValue = {
@@ -208,6 +256,11 @@ const NO_FILE_REFS: FileRefContextValue = { onFileClick: null }
  * function per render would re-render every block on every token.
  */
 const FileRefContext = React.createContext<FileRefContextValue>(NO_FILE_REFS)
+
+/** Same reason as `FileRefContext`: the fence renderer is module scope. */
+const ViewActionContext = React.createContext<
+  ((action: ViewAction) => void) | undefined
+>(undefined)
 
 /**
  * Every href the hardening pass resolves on its own: an absolute URL or custom
@@ -524,6 +577,132 @@ function useStableCallback<A extends unknown[], R>(
 }
 
 /**
+ * A phrase arrives as one: its words fade in together, quickly — long enough
+ * to soften the edge, short enough that nothing reads as lagging behind.
+ */
+const PHRASE_FADE = {
+  animation: "fadeIn",
+  duration: 240,
+  easing: "ease-out",
+  sep: "word",
+  stagger: 6,
+  maxBacklogMs: 120,
+} as const
+
+/** A first chunk this short is typed out rather than painted whole. */
+const PACE_FROM_START_CHARS = 120
+
+/**
+ * The text to paint this frame: a phrase more per beat, trailing `text` by a
+ * little while it streams (see `nextPhraseReveal`). Only growth while
+ * paced is spread out: a mount, a transcript swap or an edit shows the text
+ * as it is. `settling` stays true while what arrived before the stream ended
+ * is still being drawn.
+ */
+/**
+ * How much of each streamed text has already been on screen, by its opening
+ * characters. A streaming answer is remounted when the list regroups it — the
+ * text before a tool call moves under the "worked for" disclosure the moment
+ * that call arrives — and a fresh instance would otherwise start from nothing:
+ * reveal the text again and fade every word in again, so the paragraph the
+ * reader was on blinked out and back. Module state, because the instance that
+ * knew is gone; bounded, because it only has to bridge a remount.
+ */
+const revealedTexts = new Map<string, number>()
+const REVEAL_KEY_CHARS = 64
+const MIN_REVEAL_KEY_CHARS = 20
+const MAX_REVEALED_TEXTS = 300
+
+function rememberRevealed(text: string, length: number) {
+  if (length <= 0) return
+  const key = text.slice(0, Math.min(REVEAL_KEY_CHARS, length))
+  if ((revealedTexts.get(key) ?? 0) >= length) return
+  revealedTexts.delete(key)
+  revealedTexts.set(key, length)
+  if (revealedTexts.size > MAX_REVEALED_TEXTS) {
+    revealedTexts.delete(revealedTexts.keys().next().value as string)
+  }
+}
+
+/**
+ * How much of `text` an earlier instance already showed, or 0. A short key
+ * only matches exactly: "I'll check" opens too many answers to be evidence.
+ */
+function recallRevealed(text: string) {
+  let best = 0
+  for (const [key, length] of revealedTexts) {
+    if (length <= best) continue
+    const matches =
+      key.length >= MIN_REVEAL_KEY_CHARS ? text.startsWith(key) : text === key
+    if (matches) best = Math.min(length, text.length)
+  }
+  return best
+}
+
+function usePacedText(text: string, streaming: boolean, enabled: boolean) {
+  // Decided once, at mount: text this component has seen before (in an
+  // earlier instance) continues from where it was and does not fade again.
+  const [restored] = React.useState(() =>
+    enabled && streaming ? recallRevealed(text) : 0
+  )
+  const [shown, setShown] = React.useState(() =>
+    restored > 0
+      ? restored
+      : enabled && streaming && text.length <= PACE_FROM_START_CHARS
+        ? 0
+        : text.length
+  )
+  const [source, setSource] = React.useState(text)
+  let length = shown
+  // Adjusted while rendering: a text that is not a continuation of the last
+  // one must never paint a frame sliced at the old length.
+  if (source !== text) {
+    setSource(text)
+    if (!enabled || !isContinuation(source, text)) {
+      length = text.length
+      setShown(length)
+    }
+  }
+  if (!enabled && length !== text.length) {
+    length = text.length
+    setShown(length)
+  }
+
+  React.useEffect(() => {
+    if (enabled) rememberRevealed(text, length)
+  }, [enabled, length, text])
+
+  const behind = enabled && length < text.length
+  /**
+   * When the reveal last moved. A ref, not effect-local: the effect restarts
+   * on every token that arrives, and the beat is measured across restarts.
+   */
+  const advancedAtRef = React.useRef(0)
+  React.useEffect(() => {
+    if (!behind) return
+    let frame = 0
+    const tick = (now: number) => {
+      frame = requestAnimationFrame(tick)
+      if (!advancedAtRef.current) advancedAtRef.current = now - 10_000
+      const next = nextPhraseReveal(text, length, now - advancedAtRef.current, streaming)
+      // Most frames change nothing — and then nothing re-renders.
+      if (next > length) {
+        advancedAtRef.current = now
+        setShown(next)
+      }
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [behind, length, streaming, text])
+
+  return {
+    text: length >= text.length ? text : text.slice(0, length),
+    settling: behind,
+    restored: restored > 0,
+  }
+}
+
+/**
  * Memoized so a streaming message list only re-renders the message that
  * actually changed.
  */
@@ -531,11 +710,28 @@ export const MessageMarkdown = React.memo(function MessageMarkdown({
   children,
   className,
   isAnimating = false,
+  streaming = "paced",
+  caret,
   patternHandlers = EMPTY_HANDLERS,
   onFileClick,
   fileActions,
   copyAsMarkdown = true,
+  views = true,
+  onViewAction,
 }: MessageMarkdownProps) {
+  const paced = streaming === "paced"
+  const {
+    text: visibleText,
+    settling,
+    restored,
+  } = usePacedText(
+    children,
+    isAnimating,
+    paced
+  )
+  // A paced answer is still "animating" while it drains what already
+  // arrived, so the fade and the caret stay with it until the last word.
+  const live = isAnimating || settling
   const { resolvedTheme } = useTheme()
   const mermaidConfig = React.useMemo(
     () => ({
@@ -650,6 +846,8 @@ export const MessageMarkdown = React.memo(function MessageMarkdown({
     () => ({ onFileClick: fileClick, fileActions }),
     [fileClick, fileActions]
   )
+  const stableViewAction = useStableCallback(onViewAction)
+  const viewAction = onViewAction ? stableViewAction : undefined
 
   /**
    * Serializing the selection back to markdown, on the way to the clipboard.
@@ -676,23 +874,27 @@ export const MessageMarkdown = React.memo(function MessageMarkdown({
       onCopy={copyAsMarkdown ? handleCopy : undefined}
     >
       <FileRefContext.Provider value={fileRefs}>
-        <Streamdown
-          className={cn("lc-markdown max-w-none", className)}
-          plugins={plugins}
-          rehypePlugins={rehypePlugins}
-          remarkPlugins={remarkPlugins}
-          BlockComponent={IsolatedBlock}
-          shikiTheme={shikiTheme}
-          mermaid={mermaidConfig}
-          isAnimating={isAnimating}
-          linkSafety={linkSafety}
-          parseIncompleteMarkdown
-          codeBlockMaxHeight={Infinity}
-          tableMaxHeight={Infinity}
-          components={components}
-        >
-          {children}
-        </Streamdown>
+        <ViewActionContext.Provider value={viewAction}>
+          <Streamdown
+            className={cn("lc-markdown max-w-none", className)}
+            plugins={views ? plugins : pluginsWithoutViews}
+            rehypePlugins={rehypePlugins}
+            remarkPlugins={remarkPlugins}
+            BlockComponent={IsolatedBlock}
+            shikiTheme={shikiTheme}
+            mermaid={mermaidConfig}
+            isAnimating={live}
+            animated={paced && !restored ? PHRASE_FADE : undefined}
+            caret={caret}
+            linkSafety={linkSafety}
+            parseIncompleteMarkdown
+            codeBlockMaxHeight={Infinity}
+            tableMaxHeight={Infinity}
+            components={components}
+          >
+            {visibleText}
+          </Streamdown>
+        </ViewActionContext.Provider>
       </FileRefContext.Provider>
     </div>
   )

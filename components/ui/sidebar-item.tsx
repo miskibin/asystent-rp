@@ -41,6 +41,12 @@ import {
   useSidebarDndList,
   useSidebarDropVerb,
 } from "@/components/ui/sidebar-dnd"
+import {
+  formatElapsed,
+  ShineStyles,
+  shineClassName,
+} from "@/components/ui/generation-status"
+import { MiddleTruncate } from "@/components/ui/middle-truncate"
 import { useSidebarListMotion } from "@/components/ui/sidebar-motion"
 import { cn } from "@/lib/utils"
 
@@ -87,6 +93,11 @@ export type ChatSidebarItemData = {
    * busy recedes, a row that needs an answer does not.
    */
   recede?: boolean
+  /**
+   * The shortcut that opens this row — "⌘1". Shown as a small key over the
+   * row's end while the user holds the modifier (`ChatSidebar showJumpHints`).
+   */
+  jumpLabel?: string
 }
 
 export type SidebarItemRenderContext = {
@@ -215,6 +226,91 @@ export function SidebarItemStatusDot({
   )
 }
 
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+export type SidebarItemStatusLabelProps = Omit<
+  ComponentProps<"span">,
+  "children"
+> & {
+  status: SidebarItemStatus
+  /** "Working", "Awaiting input", "Failed" — the state in a word or two. */
+  label: string
+  /**
+   * When the work started (epoch ms). Ticks a "· 1m 05s" after the label,
+   * written straight to the DOM once a second — a sidebar of running chats
+   * costs no renders for its clocks.
+   */
+  startedAt?: number
+}
+
+/**
+ * The row's state said in words, for the `meta` slot: tinted the way the dot
+ * is, shining while the chat streams, and timing it when told when it began.
+ * The dot says *that* something is happening; this says what, and for how long.
+ */
+export function SidebarItemStatusLabel({
+  status,
+  label,
+  startedAt,
+  className,
+  ...props
+}: SidebarItemStatusLabelProps) {
+  const live = status === "streaming"
+  return (
+    <span
+      data-slot="sidebar-item-status-label"
+      data-status={status}
+      className={cn(
+        "inline-flex min-w-0 items-baseline gap-1 font-medium",
+        "data-[status=active]:text-primary data-[status=streaming]:text-primary",
+        "data-[status=pending]:text-amber-600 dark:data-[status=pending]:text-amber-400",
+        "data-[status=fault]:text-destructive data-[status=idle]:text-muted-foreground",
+        className
+      )}
+      {...props}
+    >
+      {live ? <ShineStyles /> : null}
+      <span
+        className={cn("truncate", live && shineClassName)}
+        // The shine paints the text itself; tint it in the row's own colour.
+        style={
+          live
+            ? ({
+                "--lc-shine-base": "currentColor",
+                "--lc-shine-peak": "var(--sidebar-foreground)",
+              } as CSSProperties)
+            : undefined
+        }
+      >
+        {label}
+      </span>
+      {startedAt != null ? <StatusElapsed startedAt={startedAt} /> : null}
+    </span>
+  )
+}
+
+function StatusElapsed({ startedAt }: { startedAt: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const tick = () => {
+      node.textContent = `· ${formatElapsed(Date.now() - startedAt)}`
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [startedAt])
+  return (
+    <span
+      ref={ref}
+      data-slot="sidebar-item-status-elapsed"
+      // The first paint has no clock to read; the effect fills it in.
+      suppressHydrationWarning
+      className="shrink-0 tabular-nums opacity-80"
+    />
+  )
+}
+
 function resolveStatus(
   active: boolean | undefined,
   status: SidebarItemStatus | undefined
@@ -289,7 +385,8 @@ export function SidebarItemBadge({
           className="inline-flex min-w-0 items-center gap-1"
         >
           <GitBranch aria-hidden className="size-3 shrink-0 opacity-70" />
-          <span className="truncate">{branch}</span>
+          {/* The end of a branch name is the part that tells two apart. */}
+          <MiddleTruncate value={branch} showTitle={false} />
         </span>
       ) : null}
     </span>
@@ -556,8 +653,16 @@ function SidebarItemRow({
     if (editing) setDraft(item.title)
   }
 
+  /**
+   * Enter and Escape end the edit, which unmounts the input — and a browser
+   * that blurs a focused node as it leaves fires `onBlur={commit}` after the
+   * fact. That second call would rename on Escape, so the first ending wins.
+   */
+  const settledRef = useRef(false)
+
   useEffect(() => {
     if (!editing) return
+    settledRef.current = false
     inputRef.current?.focus()
     inputRef.current?.select()
   }, [editing])
@@ -567,12 +672,16 @@ function SidebarItemRow({
   }, [onEditingChange])
 
   const commit = useCallback(() => {
+    if (settledRef.current) return
+    settledRef.current = true
     onEditingChange(false)
     const next = draft.trim()
     if (next && next !== item.title) onRename?.(next)
   }, [draft, item.title, onEditingChange, onRename])
 
   const cancel = useCallback(() => {
+    if (settledRef.current) return
+    settledRef.current = true
     onEditingChange(false)
     setDraft(item.title)
   }, [item.title, onEditingChange])
@@ -662,6 +771,8 @@ function SidebarItemRow({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
+            // The Enter that confirms an IME candidate is not a rename.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
             if (event.key === "Enter") {
               event.preventDefault()
               commit()
@@ -717,6 +828,19 @@ function SidebarItemRow({
           )}
         </button>
       )}
+      {item.jumpLabel && !editing ? (
+        <span
+          aria-hidden
+          data-slot="sidebar-item-jump"
+          className={cn(
+            "pointer-events-none absolute right-1.5 hidden h-5 items-center rounded-full border border-border/80 bg-background/95 px-1.5 font-mono text-[10px] text-muted-foreground shadow-sm",
+            multiline ? "top-2" : "top-1/2 -translate-y-1/2",
+            "[[data-jump-hints]_&]:inline-flex"
+          )}
+        >
+          {item.jumpLabel}
+        </span>
+      ) : null}
       {actions != null && !editing ? (
         // focus-visible, not focus-within: a mouse click leaves the action
         // focused, and focus-within would keep the cluster pinned over the meta

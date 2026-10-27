@@ -2,6 +2,8 @@
 
 import { ChevronDown, ChevronRight, PanelLeft } from "lucide-react"
 import {
+  useEffect,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
   type ComponentProps,
@@ -338,6 +340,18 @@ export type ChatSidebarProps = {
    * sidebar for 300ms.
    */
   animateWidth?: boolean
+  /**
+   * Holding the jump modifier on its own for a moment reveals each row's
+   * `jumpLabel` — the shortcut that opens it. Off by default: only a host
+   * that binds those shortcuts should advertise them.
+   */
+  showJumpHints?: boolean
+  /**
+   * Which key reveals the hints: `mod` is ⌘ on Apple and Ctrl elsewhere,
+   * `alt` is ⌥ / Alt — for a web app, where the browser owns ⌘1…9.
+   * @default "mod"
+   */
+  jumpHintModifier?: "mod" | "alt"
   className?: string
   classNames?: {
     rail?: string
@@ -349,6 +363,58 @@ export type ChatSidebarProps = {
   }
   collapseLabel?: string
   expandLabel?: string
+}
+
+// Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+/** Long enough that ⌘K, ⌘N and every other chord never flash the hints. */
+const JUMP_HINT_DELAY_MS = 350
+
+/**
+ * Sets `data-jump-hints` on the sidebar while the platform modifier is held on
+ * its own — an attribute rather than state, so the whole list reveals its
+ * hints in CSS without one row re-rendering. Any other key, a release or the
+ * window losing focus takes them away again.
+ */
+function useJumpHints(
+  rootRef: { current: HTMLElement | null },
+  enabled: boolean,
+  hintModifier: "mod" | "alt"
+) {
+  useEffect(() => {
+    const root = rootRef.current
+    if (!enabled || !root) return
+    const apple = /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+    const modifier =
+      hintModifier === "alt" ? "Alt" : apple ? "Meta" : "Control"
+    let timer: number | undefined
+    const hide = () => {
+      window.clearTimeout(timer)
+      timer = undefined
+      delete root.dataset.jumpHints
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== modifier || event.repeat) {
+        if (event.key !== modifier) hide()
+        return
+      }
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        root.dataset.jumpHints = "true"
+      }, JUMP_HINT_DELAY_MS)
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === modifier) hide()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    window.addEventListener("keyup", onKeyUp)
+    window.addEventListener("blur", hide)
+    return () => {
+      hide()
+      window.removeEventListener("keydown", onKeyDown)
+      window.removeEventListener("keyup", onKeyUp)
+      window.removeEventListener("blur", hide)
+    }
+  }, [enabled, hintModifier, rootRef])
 }
 
 export function ChatSidebar({
@@ -366,11 +432,15 @@ export function ChatSidebar({
   widthCollapsed = SIDEBAR_WIDTH_COLLAPSED,
   width,
   animateWidth = true,
+  showJumpHints = false,
+  jumpHintModifier = "mod",
   className,
   classNames,
   collapseLabel = "Collapse sidebar",
   expandLabel = "Open sidebar",
 }: ChatSidebarProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useJumpHints(rootRef, showJumpHints, jumpHintModifier)
   const { activeId, edgeZones: zones } = useSidebarDnd()
   const showZones = edgeZones && !!activeId && zones.length > 0
   const expandedWidth =
@@ -383,6 +453,7 @@ export function ChatSidebar({
 
   return (
     <div
+      ref={rootRef}
       data-slot="chat-sidebar"
       data-collapsed={collapsed}
       data-dividers={dividers}
@@ -506,6 +577,7 @@ export {
   ChatSidebarItemList,
   SidebarItemBadge,
   SidebarItemStatusDot,
+  SidebarItemStatusLabel,
   isTrailingDoubleClick,
   nextSidebarSelection,
 } from "@/components/ui/sidebar-item"
@@ -520,6 +592,7 @@ export type {
   SidebarItemRenderContent,
   SidebarItemRenderContext,
   SidebarItemStatus,
+  SidebarItemStatusLabelProps,
 } from "@/components/ui/sidebar-item"
 export {
   ChatSidebarDnd,

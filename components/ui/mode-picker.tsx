@@ -98,7 +98,10 @@ export function ModePicker({
           )}
         >
           <Icon className="size-3.5" />
-          <span className="truncate">{current?.name ?? label}</span>
+          {/* A cramped composer row drops the words and keeps the icon. */}
+          <span data-composer-label className="truncate">
+            {current?.name ?? label}
+          </span>
           <ChevronDown className="size-3 opacity-60 transition-transform duration-150 group-data-[state=open]:rotate-180" />
         </button>
       </DropdownMenuTrigger>

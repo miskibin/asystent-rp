@@ -21,6 +21,7 @@ import { useTheme } from "next-themes"
 import * as React from "react"
 
 import type { FileActionItem } from "@/components/ui/change-summary"
+import { formatDiffCount } from "@/components/ui/diff-stat"
 import { cn } from "@/lib/utils"
 
 export type FileTreeStatus = GitStatus
@@ -362,10 +363,16 @@ export function FileTree({
       if (!stat) return null
       const parts = []
       if (stat.additions > 0) {
-        parts.push({ text: `+${stat.additions}`, color: ADDED_COLOR })
+        parts.push({
+          text: `+${formatDiffCount(stat.additions)}`,
+          color: ADDED_COLOR,
+        })
       }
       if (stat.deletions > 0) {
-        parts.push({ text: `−${stat.deletions}`, color: REMOVED_COLOR })
+        parts.push({
+          text: `−${formatDiffCount(stat.deletions)}`,
+          color: REMOVED_COLOR,
+        })
       }
       if (parts.length === 0) return null
       return {

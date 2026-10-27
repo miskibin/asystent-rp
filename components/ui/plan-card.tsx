@@ -85,6 +85,18 @@ export function hasWrittenPlan(tool: { name: string; input?: string }) {
   return isPlanToolName(tool.name) && !!parsePlan(tool.input)
 }
 
+/** Past this a plan folds: about one screen of a message column. */
+const LONG_PLAN_CHARS = 900
+const LONG_PLAN_LINES = 20
+
+function isLongPlan(plan: PlanData) {
+  const text = plan.body
+  return (
+    text.length > LONG_PLAN_CHARS ||
+    text.split("\n").length + (plan.todos?.length ?? 0) > LONG_PLAN_LINES
+  )
+}
+
 export type PlanCardProps = Omit<React.ComponentProps<"div">, "children"> & {
   plan: PlanData
   /**
@@ -107,6 +119,13 @@ export type PlanCardProps = Omit<React.ComponentProps<"div">, "children"> & {
    */
   compact?: boolean
   /**
+   * Fold a long plan to its first screen behind an "Expand plan" button. On
+   * by default: a plan is read top-down and argued with, and a forty-step one
+   * pushed the turn after it a page out of sight. Pass `false` where the card
+   * already has the room — a side panel.
+   */
+  collapsible?: boolean
+  /**
    * Makes the card's header the way back to the plan. Given, the header is a
    * button; the body below it is unaffected, so an expanded card can carry it
    * too — the same plan, somewhere it can be read properly.
@@ -125,11 +144,16 @@ export const PlanCard = React.memo(function PlanCard({
   buildLabel = "Build",
   busy = false,
   compact = false,
+  collapsible = true,
   onOpen,
   className,
   ...props
 }: PlanCardProps) {
   const progress = plan.todos?.length ? todoProgress(plan.todos) : null
+  const [expanded, setExpanded] = React.useState(false)
+  // Adapted from T3 Code (github.com/pingdotgg/t3code), MIT License, (c) 2026 T3 Tools Inc.
+  const canCollapse = collapsible && isLongPlan(plan)
+  const folded = canCollapse && !expanded
 
   const header = (
     <>
@@ -189,6 +213,11 @@ export const PlanCard = React.memo(function PlanCard({
       )}
       {compact ? null : (
       <div data-slot="plan-card-body" className="px-3.5 py-3">
+        <div
+          data-slot="plan-card-content"
+          data-folded={folded || undefined}
+          className={cn("relative", folded && "max-h-104 overflow-hidden")}
+        >
         {plan.overview ? (
           <p
             data-slot="plan-card-overview"
@@ -205,6 +234,26 @@ export const PlanCard = React.memo(function PlanCard({
             data-slot="plan-card-todos"
             className="mt-3 border-t pt-3"
           />
+        ) : null}
+          {folded ? (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card via-card/80 to-transparent"
+            />
+          ) : null}
+        </div>
+        {canCollapse ? (
+          <div className="mt-2 flex justify-center">
+            <button
+              type="button"
+              data-slot="plan-card-expand"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((value) => !value)}
+              className="inline-flex h-7 cursor-pointer items-center rounded-md border bg-background px-2.5 text-[12px] font-medium text-foreground shadow-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {expanded ? "Collapse plan" : "Expand plan"}
+            </button>
+          </div>
         ) : null}
       </div>
       )}

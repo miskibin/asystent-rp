@@ -24,6 +24,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -343,6 +344,10 @@ export function ChatSidebarDnd({
   // One answer per target per drag: `canDrop` may walk a real data structure,
   // and a pointer crossing a row asks about it on every move.
   const dropCacheRef = useRef(new Map<string, boolean>())
+  // dnd-kit numbers its screen-reader description per instance on a module
+  // counter, which a server render and the client never agree on — a
+  // hydration mismatch on every row. A React id is the same on both.
+  const dndId = useId()
 
   /** Zones win whenever the pointer is inside one; items fall back to closest-center. */
   const collisionDetection = useCallback<CollisionDetection>(
@@ -493,6 +498,7 @@ export function ChatSidebarDnd({
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors ?? defaultSensors}
       modifiers={modifiers}
       collisionDetection={collisionDetection}

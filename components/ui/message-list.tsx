@@ -3,6 +3,7 @@
 import { ArrowDown } from "lucide-react"
 import * as React from "react"
 
+import type { ViewAction } from "@/lib/generative-view"
 import { cn } from "@/lib/utils"
 import {
   GenerationStatus,
@@ -35,6 +36,8 @@ const BOTTOM_SCROLL_THRESHOLD_PX = 48
  * content under the viewport is growing while the test runs.
  */
 const FOLLOW_REARM_THRESHOLD_PX = 40
+/** Keys that move a focused scroller toward the top of the transcript. */
+const RELEASE_KEYS = new Set(["ArrowUp", "PageUp", "Home"])
 const EMPTY_PATTERNS: PatternHandler[] = []
 const OFFSCREEN_ITEM_STYLE: React.CSSProperties = {
   contentVisibility: "auto",
@@ -67,6 +70,11 @@ export type MessageListProps = React.ComponentProps<"div"> & {
    * memory", "Waiting for the first token").
    */
   generationLabel?: string
+  /**
+   * When the waiting turn started (epoch ms) — the indicator then counts up
+   * beside its label. Ticks without re-rendering the list.
+   */
+  generationStartedAt?: number
   patternHandlers?: PatternHandler[]
   onEditMessage?: (id: string, content: string) => void
   onAskAnswer?: (
@@ -102,6 +110,11 @@ export type MessageListProps = React.ComponentProps<"div"> & {
   fileActions?: FileActionItem[]
   /** Quoting a selection out of an assistant answer, for the composer. */
   onQuote?: (messageId: string, text: string) => void
+  /**
+   * A button or form in an answer's ` ```ui ` view asks to send a message —
+   * hand `action.text` to whatever sends the user's next turn.
+   */
+  onViewAction?: (messageId: string, action: ViewAction) => void
   /**
    * Turns a path a tool names into a URL the page can load — forwarded to
    * every row so an image the agent wrote or read renders as a picture.
@@ -160,6 +173,43 @@ function useStableFileActions(actions?: FileActionItem[]) {
   const [held, setHeld] = React.useState(actions)
   if (!sameFileActions(held, actions)) setHeld(actions)
   return sameFileActions(held, actions) ? held : actions
+}
+
+/**
+ * `patternHandlers` reaches every memoized row, and a host that writes it
+ * inline hands over a new array — and new `render` closures — every render,
+ * which re-rendered the whole transcript on every streamed token. The
+ * identity is held for as long as the patterns themselves are the same; each
+ * `render` delegates to the newest one, the way a stable callback does.
+ */
+function useStablePatternHandlers(handlers: PatternHandler[]) {
+  const renderAt = useStableCallback(
+    (index: number, match: RegExpExecArray) => handlers[index]?.render(match)
+  )
+  const key = handlers
+    .map((handler) => `${handler.pattern.source}/${handler.pattern.flags}`)
+    .join("\0")
+  // Adjusted during render, like `useStableFileActions`: the rows must never
+  // see the throwaway identity.
+  const [held, setHeld] = React.useState(() => ({
+    key,
+    value: delegatingHandlers(handlers, renderAt),
+  }))
+  if (held.key === key) return held.value
+  const next = { key, value: delegatingHandlers(handlers, renderAt) }
+  setHeld(next)
+  return next.value
+}
+
+function delegatingHandlers(
+  handlers: PatternHandler[],
+  renderAt: (index: number, match: RegExpExecArray) => React.ReactNode
+): PatternHandler[] {
+  if (handlers.length === 0) return EMPTY_PATTERNS
+  return handlers.map((handler, index) => ({
+    pattern: handler.pattern,
+    render: (match) => renderAt(index, match),
+  }))
 }
 
 /** Pixels between the bottom of the visible area and the end of the content. */
@@ -224,6 +274,51 @@ export function useChatAutoScroll(
     return () => observer.disconnect()
   }, [measureAtBottom])
 
+  /**
+   * What the *reader* did, as opposed to what a scroll event says happened.
+   *
+   * During a stream the list scrolls itself on every token, and each of those
+   * opens a short window in which a scroll away from the end is assumed to be
+   * ours. Tokens arrive faster than that window closes, so judged by scroll
+   * events alone a reader wheeling up mid-answer was never believed and got
+   * dragged back down by the next chunk. Input that can only mean "take me up"
+   * — a wheel or a key toward the top, a touch drag, a grab of the scrollbar —
+   * stops following at once, whatever the list was doing a moment ago.
+   */
+  React.useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const release = () => {
+      autoScrollRef.current = false
+      programmaticScrollUntilRef.current = 0
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) release()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !RELEASE_KEYS.has(event.key)) return
+      // ArrowUp inside an edit box moves its caret, not the transcript.
+      const target = event.target as HTMLElement | null
+      if (target?.closest("input, textarea, [contenteditable='true']")) return
+      release()
+    }
+    // Only a press on the scroller itself — its scrollbar — counts; a click on
+    // a message inside it is not a scroll.
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target === el) release()
+    }
+    el.addEventListener("wheel", onWheel, { passive: true })
+    el.addEventListener("touchmove", release, { passive: true })
+    el.addEventListener("keydown", onKeyDown)
+    el.addEventListener("pointerdown", onPointerDown)
+    return () => {
+      el.removeEventListener("wheel", onWheel)
+      el.removeEventListener("touchmove", release)
+      el.removeEventListener("keydown", onKeyDown)
+      el.removeEventListener("pointerdown", onPointerDown)
+    }
+  }, [])
+
   /** Jump to the newest line and start following the turn again. */
   const scrollToBottom = React.useCallback(() => {
     const node = scrollRef.current
@@ -268,6 +363,13 @@ export function useChatAutoScroll(
     const curr = messages.length
     prevMessageCountRef.current = curr
     const isInitialOrJump = prev === 0 || curr - prev > 1
+    /* The reader's own message landing is the reader asking to see it — even
+       from halfway up the transcript, and even when the host appends it alone
+       rather than together with the reply it is waiting for. */
+    const last = curr > prev ? (messages[curr - 1] as { sender?: unknown }) : null
+    if (last && typeof last === "object" && last.sender === "user") {
+      autoScrollRef.current = true
+    }
     if (!autoScrollRef.current && !isInitialOrJump) return
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(() => {
@@ -357,6 +459,7 @@ const MessageListRow = React.memo(function MessageListRow({
   onFileReferenceClick,
   fileActions,
   onQuote,
+  onViewAction,
   resolveFileUrl,
 }: {
   message: ChatMessageData
@@ -389,6 +492,7 @@ const MessageListRow = React.memo(function MessageListRow({
   ) => void
   fileActions?: FileActionItem[]
   onQuote?: (messageId: string, text: string) => void
+  onViewAction?: (messageId: string, action: ViewAction) => void
   resolveFileUrl?: (path: string) => string | undefined
 }) {
   const isUser = message.sender === "user"
@@ -431,6 +535,10 @@ const MessageListRow = React.memo(function MessageListRow({
     (text: string) => onQuote?.(message.id, text),
     [message.id, onQuote]
   )
+  const handleViewAction = React.useCallback(
+    (action: ViewAction) => onViewAction?.(message.id, action),
+    [message.id, onViewAction]
+  )
 
   return (
     <Message
@@ -466,6 +574,7 @@ const MessageListRow = React.memo(function MessageListRow({
       }
       fileActions={fileActions}
       onQuote={onQuote ? handleQuote : undefined}
+      onViewAction={onViewAction ? handleViewAction : undefined}
       resolveFileUrl={resolveFileUrl}
     />
   )
@@ -476,6 +585,7 @@ export function MessageList({
   isGenerating = false,
   generationStage = "idle",
   generationLabel,
+  generationStartedAt,
   patternHandlers = EMPTY_PATTERNS,
   onEditMessage,
   onAskAnswer,
@@ -487,6 +597,7 @@ export function MessageList({
   onFileReferenceClick,
   fileActions,
   onQuote,
+  onViewAction,
   resolveFileUrl,
   renderActions,
   conversationKey,
@@ -509,10 +620,12 @@ export function MessageList({
   const stableChangeFileClick = useStableCallback(onChangeFileClick)
   const stableFileReferenceClick = useStableCallback(onFileReferenceClick)
   const stableQuote = useStableCallback(onQuote)
+  const stableViewAction = useStableCallback(onViewAction)
   // Rows are memoized: a host that builds this resolver inline would otherwise
   // re-render every row on every streamed token.
   const stableResolveFileUrl = useStableCallback(resolveFileUrl)
   const stableFileActions = useStableFileActions(fileActions)
+  const stablePatternHandlers = useStablePatternHandlers(patternHandlers)
 
   return (
     <div
@@ -569,7 +682,7 @@ export function MessageList({
                     isStreaming={isStreaming}
                     openAsk={openAsk}
                     openPlan={openPlan}
-                    patternHandlers={patternHandlers}
+                    patternHandlers={stablePatternHandlers}
                     onEditMessage={onEditMessage ? stableEdit : undefined}
                     onAskAnswer={onAskAnswer ? stableAskAnswer : undefined}
                     onPlanBuild={onPlanBuild ? stablePlanBuild : undefined}
@@ -586,6 +699,7 @@ export function MessageList({
                     }
                     fileActions={stableFileActions}
                     onQuote={onQuote ? stableQuote : undefined}
+                    onViewAction={onViewAction ? stableViewAction : undefined}
                     resolveFileUrl={
                       resolveFileUrl ? stableResolveFileUrl : undefined
                     }
@@ -600,6 +714,7 @@ export function MessageList({
                         active
                         stage={generationStage}
                         label={generationLabel}
+                        startedAt={generationStartedAt}
                       />
                     </div>
                   ) : isStreaming || openAsk ? null : (

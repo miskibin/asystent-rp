@@ -1386,3 +1386,161 @@ function commandProgramNameInternal(
 export function commandProgramName(command: string, depth = 0): string | null {
   return commandProgramNameInternal(command, depth, "shell", MAX_COMMAND_SEGMENTS);
 }
+
+const SLEEP_ARG = String.raw`\d+(?:\.\d+)?[smhd]?`;
+/** Ends the sleep's own segment: a sequence, an and/or, or a new line — not `&` or `|`. */
+const SEGMENT_END = String.raw`\s*(?:$|;|&&|\|\||\n)`;
+const SLEEP_RE = new RegExp(String.raw`^sleep\s+(${SLEEP_ARG}(?:\s+${SLEEP_ARG})*)${SEGMENT_END}`);
+const START_SLEEP_RE = new RegExp(
+  String.raw`^start-sleep\s+(?:-(s|seconds|m|milliseconds)\s+)?(\d+(?:\.\d+)?)${SEGMENT_END}`,
+  "i",
+);
+const SLEEP_UNIT_SECONDS: Record<string, number> = { "": 1, s: 1, m: 60, h: 3600, d: 86400 };
+
+/**
+ * How long a command sleeps before it does anything else, in seconds — for a
+ * running row that would otherwise sit there looking hung. Only a sleep that
+ * *leads* the command and runs in the foreground counts: `sleep 195; tail log`
+ * and `Start-Sleep -Seconds 30` do, while `sleep 5 &`, `sleep infinity`, a
+ * `$VAR` duration and a sleep halfway down a script do not, because none of
+ * them says when the command will move on. `command` should already have its
+ * shell wrapper and `cd` prefix peeled off.
+ */
+export function leadingSleepSeconds(command: string): number | null {
+  const text = command.trim();
+  const sleep = SLEEP_RE.exec(text);
+  if (sleep) {
+    // GNU sleep sums its arguments: `sleep 1m 30s` is ninety seconds.
+    const total = sleep[1].split(/\s+/).reduce((sum, arg) => {
+      const unit = /[smhd]$/.test(arg) ? arg.slice(-1) : "";
+      return sum + Number.parseFloat(arg) * SLEEP_UNIT_SECONDS[unit];
+    }, 0);
+    return total > 0 && Number.isFinite(total) ? total : null;
+  }
+  const startSleep = START_SLEEP_RE.exec(text);
+  if (startSleep) {
+    const value = Number.parseFloat(startSleep[2]);
+    const millis = /^m/i.test(startSleep[1] ?? "");
+    const total = millis ? value / 1000 : value;
+    return total > 0 ? total : null;
+  }
+  return null;
+}
+
+export type ShellTokenKind =
+  | "program"
+  | "flag"
+  | "string"
+  | "variable"
+  | "operator"
+  | "comment"
+  | "text";
+
+export type ShellToken = { kind: ShellTokenKind; text: string };
+
+/** Past this a command is a script, and colouring it is not worth the walk. */
+const MAX_TOKENIZE_CHARS = 8_000;
+/** Longest first: `2>&1` before `2>`, `&&` before `&`. */
+const SHELL_OPERATORS = ["2>&1", "&>>", "2>>", ">>", "&&", "||", "2>", "&>", "$(", "|", ";", "&", ">", "<", "(", ")"];
+/** After these the next word is a program again. */
+const STARTS_COMMAND = new Set(["&&", "||", "|", ";", "&", "(", "$("]);
+const WORD_STOP = /[\s'"`$|;&<>()]/;
+
+/**
+ * A shell line cut into the pieces a tool row tints — the program each segment
+ * runs, its flags, quoted strings, `$VARS`, operators and comments.
+ *
+ * Deliberately a lexer, not a parser: one pass, no backtracking, nothing a
+ * pathological command can make slow, and every character of the input lands
+ * in exactly one token, so joining the tokens gives the command back. Wrong
+ * guesses only ever cost a colour.
+ */
+export function tokenizeShell(command: string): ShellToken[] {
+  if (command.length > MAX_TOKENIZE_CHARS) return [{ kind: "text", text: command }];
+  const tokens: ShellToken[] = [];
+  const push = (kind: ShellTokenKind, text: string) => {
+    const last = tokens[tokens.length - 1];
+    if (last && last.kind === kind && kind === "text") last.text += text;
+    else tokens.push({ kind, text });
+  };
+  let expectProgram = true;
+  let wordStart = true;
+  let i = 0;
+  while (i < command.length) {
+    const char = command[i];
+    if (/\s/.test(char)) {
+      let end = i + 1;
+      while (end < command.length && /\s/.test(command[end])) end++;
+      const space = command.slice(i, end);
+      push("text", space);
+      if (space.includes("\n") && !command.slice(0, i).endsWith("\\")) expectProgram = true;
+      wordStart = true;
+      i = end;
+      continue;
+    }
+    if (char === "#" && wordStart) {
+      const end = command.indexOf("\n", i);
+      const stop = end < 0 ? command.length : end;
+      push("comment", command.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      let end = i + 1;
+      while (end < command.length && command[end] !== char) {
+        end += char !== "'" && command[end] === "\\" ? 2 : 1;
+      }
+      push("string", command.slice(i, Math.min(end + 1, command.length)));
+      i = end + 1;
+      expectProgram = false;
+      wordStart = false;
+      continue;
+    }
+    const operator = SHELL_OPERATORS.find((op) => command.startsWith(op, i));
+    if (operator && !(operator.startsWith("2") && !wordStart)) {
+      push("operator", operator);
+      i += operator.length;
+      if (STARTS_COMMAND.has(operator)) expectProgram = true;
+      wordStart = true;
+      continue;
+    }
+    if (char === "$") {
+      const braced = command[i + 1] === "{";
+      let end = i + 1;
+      if (braced) {
+        const close = command.indexOf("}", i);
+        end = close < 0 ? command.length : close + 1;
+      } else {
+        while (end < command.length && /[\w?@#*!$-]/.test(command[end])) {
+          end++;
+          if (!/\w/.test(command[end - 1])) break;
+        }
+      }
+      push("variable", command.slice(i, end));
+      i = end;
+      expectProgram = false;
+      wordStart = false;
+      continue;
+    }
+    let end = i + 1;
+    while (end < command.length && !WORD_STOP.test(command[end])) {
+      if (command[end] === "\\") end++;
+      end++;
+    }
+    const word = command.slice(i, end);
+    if (expectProgram && wordStart && /^[A-Za-z_]\w*=/.test(word)) {
+      // `FOO=1 npm test`: an assignment, and the program is still to come.
+      push("variable", word);
+    } else if (expectProgram && wordStart) {
+      push("program", word);
+      expectProgram = false;
+    } else if (wordStart && /^--?[A-Za-z0-9]/.test(word)) {
+      push("flag", word);
+    } else {
+      push("text", word);
+    }
+    wordStart = false;
+    i = end;
+  }
+  return tokens;
+}

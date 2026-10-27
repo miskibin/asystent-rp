@@ -185,6 +185,8 @@ export function ModelPicker({
           {currentEffort ? (
             <span
               data-slot="model-picker-trigger-effort"
+              // A cramped composer row keeps the model and drops the effort.
+              data-composer-label
               className="shrink-0 opacity-60"
             >
               {currentEffort.label}
@@ -355,7 +357,7 @@ function ModelList({
     )
   }
 
-  const match = matches(search)
+  const rank = rankModels(search)
 
   return (
     <Command
@@ -381,9 +383,7 @@ function ModelList({
         </CommandEmpty>
         {sections
           ? sections.map((section) => {
-              const visible = section.options.filter((model) =>
-                match(model, section.group?.label)
-              )
+              const visible = rank(section.options, section.group?.label)
               if (visible.length === 0) return null
               return (
                 <CommandGroup
@@ -408,16 +408,14 @@ function ModelList({
                 </CommandGroup>
               )
             })
-          : options
-              .filter((model) => match(model))
-              .map((model) => (
-                <ModelCommandItem
-                  key={model.id}
-                  model={model}
-                  selected={model.id === selectedId}
-                  onPick={onPick}
-                />
-              ))}
+          : rank(options).map((model) => (
+              <ModelCommandItem
+                key={model.id}
+                model={model}
+                selected={model.id === selectedId}
+                onPick={onPick}
+              />
+            ))}
       </CommandList>
     </Command>
   )
@@ -530,18 +528,48 @@ function rowTitle(model: ModelOption) {
   )
 }
 
-/** Substring match over everything the row can show, not just the name. */
-function matches(
+/**
+ * Filters and orders a list for the search box. Every word of the query must
+ * appear somewhere the row can show — its name, id, badge, description, meta
+ * or section — so "opus anthropic" finds the Opus under Anthropic. Rows whose
+ * *name* matches best come first: exact, then prefix, then the start of a
+ * word, then anywhere; a match only in the other fields ranks last. Ties keep
+ * the catalog's own order.
+ */
+export function rankModels(
   search: string
-): (model: ModelOption, groupLabel?: string) => boolean {
-  const needle = search.trim().toLowerCase()
-  if (!needle) return () => true
-  return (model, groupLabel) =>
-    [model.name, model.badge, model.description, model.meta, groupLabel]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(needle)
+): (models: ModelOption[], groupLabel?: string) => ModelOption[] {
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return (models) => models
+  return (models, groupLabel) => {
+    const scored: Array<{ model: ModelOption; score: number; index: number }> = []
+    models.forEach((model, index) => {
+      const name = model.name.toLowerCase()
+      const rest = [model.id, model.badge, model.description, model.meta, groupLabel]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      let score = 0
+      for (const word of words) {
+        const rank = nameRank(name, word)
+        if (rank !== null) score += rank
+        else if (rest.includes(word)) score += 4
+        else return
+      }
+      scored.push({ model, score, index })
+    })
+    return scored
+      .sort((a, b) => a.score - b.score || a.index - b.index)
+      .map((entry) => entry.model)
+  }
+}
+
+function nameRank(name: string, word: string): number | null {
+  if (name === word) return 0
+  if (name.startsWith(word)) return 1
+  const at = name.indexOf(word)
+  if (at < 0) return null
+  return /[^a-z0-9]/.test(name[at - 1] ?? "") ? 2 : 3
 }
 
 function ModelRow({

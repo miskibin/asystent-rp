@@ -28,6 +28,7 @@ import {
   type ChangeSummaryFile,
   type FileActionItem,
 } from "@/components/ui/change-summary"
+import type { ViewAction } from "@/lib/generative-view"
 import { cn } from "@/lib/utils"
 import { MessageMarkdown } from "@/components/ui/message-markdown"
 
@@ -120,6 +121,11 @@ export type MessageProps = {
    * dropping the selected text into the composer. Assistant turns only.
    */
   onQuote?: (text: string) => void
+  /**
+   * A button or form inside a ` ```ui ` view in the answer asks to send a
+   * message. Keep it stable — it reaches every markdown block.
+   */
+  onViewAction?: (action: ViewAction) => void
 }
 
 const THINK_TAG_REGEX = /<think>([\s\S]*?)<\/think>/i
@@ -182,6 +188,7 @@ export const Message = React.memo(function Message({
   onFileReferenceClick,
   fileActions,
   onQuote,
+  onViewAction,
 }: MessageProps) {
   const [isEditing, setIsEditing] = React.useState(false)
   const [editedContent, setEditedContent] = React.useState(content)
@@ -227,12 +234,6 @@ export const Message = React.memo(function Message({
     setIsEditing(false)
     if (onEdit && editedContent !== content) onEdit(editedContent)
   }, [content, editedContent, onEdit])
-
-  /** Scanned once per render instead of once per thinking part. */
-  const lastThinkingIndex = React.useMemo(
-    () => parts?.findLastIndex((part) => part.type === "thinking") ?? -1,
-    [parts]
-  )
 
   /**
    * Everything up to and including the last thinking / tool part is the
@@ -396,6 +397,7 @@ export const Message = React.memo(function Message({
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
               onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault()
                   saveEdit()
@@ -460,7 +462,8 @@ export const Message = React.memo(function Message({
               onClick={startEdit}
               className={cn(
                 messageActionButton,
-                "opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
+                // A touch screen has no hover: there the action simply stays.
+                "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
               )}
             >
               <Pencil />
@@ -470,7 +473,7 @@ export const Message = React.memo(function Message({
             <div
               data-slot="message-content"
               className={cn(
-                "max-w-[85%] min-w-0 rounded-xl bg-muted px-3.5 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-foreground sm:max-w-[70%] sm:px-4",
+                "max-w-[85%] min-w-0 rounded-2xl bg-muted px-3.5 py-2.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-foreground sm:max-w-[70%] sm:px-4",
                 contentClassName
               )}
             >
@@ -523,12 +526,14 @@ export const Message = React.memo(function Message({
     }
     if (part.type === "thinking") {
       if (!part.text) return null
-      const isLatestThinking = index === lastThinkingIndex
+      // Only a thought nothing has followed yet is still being thought: once a
+      // tool call or the answer lands after it, it reads "Thought" and folds.
+      const isLiveThinking = index === parts.length - 1
       return (
         <MessageReasoning
           key={part.id}
           defaultOpen={reasoningDefaultOpen}
-          streaming={isAnimating && isLatestThinking}
+          streaming={isAnimating && isLiveThinking}
         >
           {part.text}
         </MessageReasoning>
@@ -541,6 +546,7 @@ export const Message = React.memo(function Message({
         patternHandlers={patternHandlers}
         onFileClick={onFileReferenceClick}
         fileActions={fileActions}
+        onViewAction={onViewAction}
       >
         {part.text}
       </MessageMarkdown>
@@ -577,6 +583,7 @@ export const Message = React.memo(function Message({
             patternHandlers={patternHandlers}
             onFileClick={onFileReferenceClick}
             fileActions={fileActions}
+            onViewAction={onViewAction}
           >
             {displayContent}
           </MessageMarkdown>,
@@ -647,7 +654,7 @@ export const Message = React.memo(function Message({
         (editable && onEdit) ? (
           <div
             data-slot="message-actions"
-            className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
+            className="mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
           >
             {[...insideButtons, ...outsideButtons].map((button) => (
               <button
@@ -706,11 +713,13 @@ export {
   MessageArtifact,
   MessageAttachments,
   MessageCode,
+  MessageDivider,
   MessageProcess,
   MessageReasoning,
   MessageToolCall,
   MessageToolCalls,
 } from "@/components/ui/message-parts"
+export type { MessageDividerProps } from "@/components/ui/message-parts"
 export {
   AskQuestion,
   isAskToolName,
